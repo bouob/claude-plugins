@@ -1,0 +1,33 @@
+{
+  "name": "bouob-plugins",
+  "owner": {
+    "name": "Victor",
+    "email": "victor@0x1.now"
+  },
+  "metadata": {
+    "description": "Victor's Claude Code plugins — statusline, coding skills, and more.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "claude-statusline",
+      "source": {
+        "source": "github",
+        "repo": "bouob/claude-statusline"
+      },
+      "description": "Zero-dependency statusline with rainbow progress bar, 10 themes, rate limit monitoring, and natural language config.",
+      "keywords": ["statusline", "rainbow", "themes", "rate-limit"],
+      "license": "MIT"
+    },
+    {
+      "name": "coding-skills",
+      "source": {
+        "source": "github",
+        "repo": "bouob/coding-skills"
+      },
+      "description": "Opinionated coding skills for TypeScript, React, and Python — TDD workflows, SOLID principles, spec-driven design, and code review.",
+      "keywords": ["tdd", "sdd", "typescript", "react", "python", "code-review", "solid"],
+      "license": "MIT"
+    }
+  ]
+}
