@@ -11,20 +11,14 @@
   "plugins": [
     {
       "name": "claude-statusline",
-      "source": {
-        "source": "github",
-        "repo": "bouob/claude-statusline"
-      },
+      "source": "./plugins/claude-statusline",
       "description": "Zero-dependency statusline with rainbow progress bar, 10 themes, rate limit monitoring, and natural language config.",
       "keywords": ["statusline", "rainbow", "themes", "rate-limit"],
       "license": "MIT"
     },
     {
       "name": "coding-skills",
-      "source": {
-        "source": "github",
-        "repo": "bouob/coding-skills"
-      },
+      "source": "./plugins/coding-skills",
       "description": "Opinionated coding skills for TypeScript, React, and Python — TDD workflows, SOLID principles, spec-driven design, and code review.",
       "keywords": ["tdd", "sdd", "typescript", "react", "python", "code-review", "solid"],
       "license": "MIT"

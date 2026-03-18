@@ -1,0 +1,17 @@
+{
+  "name": "coding-skills",
+  "owner": {
+    "name": "Victor"
+  },
+  "metadata": {
+    "description": "Opinionated coding skills for TypeScript, React, and Python.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "coding-skills",
+      "source": "./",
+      "description": "TDD workflows, SOLID principles, and structured code review."
+    }
+  ]
+}
