@@ -22,6 +22,13 @@
       "description": "Opinionated coding skills for TypeScript, React, and Python — TDD workflows, SOLID principles, spec-driven design, and code review.",
       "keywords": ["tdd", "sdd", "typescript", "react", "python", "code-review", "solid"],
       "license": "MIT"
+    },
+    {
+      "name": "sysadmin-skills",
+      "source": "./plugins/sysadmin-skills",
+      "description": "ITIL 4-based IT operations skills — incident response, change management with CAB review, and status communication.",
+      "keywords": ["itil", "itsm", "incident-response", "change-management", "sysadmin"],
+      "license": "MIT"
     }
   ]
 }
