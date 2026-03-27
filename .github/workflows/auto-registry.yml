@@ -1,0 +1,79 @@
+name: Auto-update marketplace registry
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/*/.claude-plugin/plugin.json'
+
+jobs:
+  update-registry:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate marketplace.json from plugin.json files
+        run: |
+          MARKETPLACE=".claude-plugin/marketplace.json"
+
+          # Read existing top-level fields
+          NAME=$(jq -r '.name' "$MARKETPLACE")
+          OWNER=$(jq -c '.owner' "$MARKETPLACE")
+          METADATA=$(jq -c '.metadata' "$MARKETPLACE")
+
+          # Build plugins array from each plugin's plugin.json
+          PLUGINS="[]"
+          for pjson in plugins/*/.claude-plugin/plugin.json; do
+            [ -f "$pjson" ] || continue
+            PLUGIN_DIR=$(echo "$pjson" | sed 's|plugins/\([^/]*\)/.*|\1|')
+
+            P_NAME=$(jq -r '.name' "$pjson")
+            P_DESC=$(jq -r '.description' "$pjson")
+            P_KEYWORDS=$(jq -c '.keywords // []' "$pjson")
+            P_LICENSE=$(jq -r '.license // "MIT"' "$pjson")
+
+            ENTRY=$(jq -n \
+              --arg name "$P_NAME" \
+              --arg source "./plugins/$PLUGIN_DIR" \
+              --arg desc "$P_DESC" \
+              --argjson kw "$P_KEYWORDS" \
+              --arg lic "$P_LICENSE" \
+              '{name: $name, source: $source, description: $desc, keywords: $kw, license: $lic}')
+
+            PLUGINS=$(echo "$PLUGINS" | jq --argjson e "$ENTRY" '. + [$e]')
+          done
+
+          # Sort plugins by name for deterministic output
+          PLUGINS=$(echo "$PLUGINS" | jq 'sort_by(.name)')
+
+          # Reconstruct marketplace.json
+          jq -n \
+            --arg name "$NAME" \
+            --argjson owner "$OWNER" \
+            --argjson meta "$METADATA" \
+            --argjson plugins "$PLUGINS" \
+            '{name: $name, owner: $owner, metadata: $meta, plugins: $plugins}' \
+            > "$MARKETPLACE.tmp"
+
+          mv "$MARKETPLACE.tmp" "$MARKETPLACE"
+
+      - name: Check for changes
+        id: check
+        run: |
+          if git diff --quiet .claude-plugin/marketplace.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .claude-plugin/marketplace.json
+          git commit -m "chore: auto-update marketplace registry"
+          git push
