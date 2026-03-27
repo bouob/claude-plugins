@@ -1,0 +1,17 @@
+{
+  "name": "sysadmin-skills",
+  "owner": {
+    "name": "Victor"
+  },
+  "metadata": {
+    "description": "ITIL 4-based IT operations skills for system administrators.",
+    "version": "0.3.0"
+  },
+  "plugins": [
+    {
+      "name": "sysadmin-skills",
+      "source": "./",
+      "description": "Incident response, change management with CAB review, and status communication."
+    }
+  ]
+}
