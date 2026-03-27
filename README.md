@@ -1,5 +1,7 @@
 # bouob-plugins
 
+[繁體中文](./README.zh-TW.md)
+
 Claude Code plugin marketplace by [Victor](https://github.com/bouob).
 
 ## Plugins
@@ -8,6 +10,7 @@ Claude Code plugin marketplace by [Victor](https://github.com/bouob).
 |--------|-------------|
 | [claude-statusline](https://github.com/bouob/claude-statusline) | Zero-dependency statusline with rainbow progress bar, 10 themes, and natural language config |
 | [coding-skills](https://github.com/bouob/coding-skills) | Opinionated coding skills for TypeScript, React, and Python — TDD, SOLID, spec-driven design |
+| [sysadmin-skills](https://github.com/bouob/sysadmin-skills) | ITIL 4-based IT operations skills — incident response, change management with CAB review |
 
 ## Usage
 
@@ -22,6 +25,7 @@ Claude Code plugin marketplace by [Victor](https://github.com/bouob).
 # Or install directly
 /plugin install claude-statusline@bouob-plugins
 /plugin install coding-skills@bouob-plugins
+/plugin install sysadmin-skills@bouob-plugins
 ```
 
 ## License
