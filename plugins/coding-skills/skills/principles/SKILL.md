@@ -1,110 +1,73 @@
 ---
 name: principles
-description: 'Apply coding principles for TypeScript, React, and Python. This skill should be used when designing new features, making architecture decisions, defining interface boundaries, choosing dependency direction, or asking about naming conventions, import order, function length limits, or SOLID principles. Do NOT use for refactoring existing code (use /refactor) or bug fixes (use /fix).'
+description: 'Enforce project-specific coding constraints that Claude does not apply by default: function length limits (50 TS / 60 Python), dependency injection over concretions, and structured data class selection. Auto-loaded by /write, /fix, /review, /refactor when designing interfaces or checking architecture. Do NOT use for refactoring (use /refactor) or bug fixes (use /fix).'
 user-invocable: false
 ---
 
 # Coding Principles
 
-## Applicability Rubric
+## When This Skill Applies
 
-| Scenario | Apply? |
-|----------|--------|
-| Designing a new feature or module | ✅ Pass |
-| Making architecture decisions | ✅ Pass |
-| Defining interface / API boundaries | ✅ Pass |
-| Choosing dependency direction | ✅ Pass |
-| Refactoring existing code | ❌ Fail → use /refactor |
-| Fixing a bug | ❌ Fail → use /fix |
-| Pure implementation detail | ❌ Fail — just write it |
+- Designing a new feature or module
+- Making architecture decisions
+- Defining interface / API boundaries
+- Choosing dependency direction
 
-## Related Skills
-
-- **testing** — when the design requires a testability strategy
-- **/review** — when applying these principles to existing code
-- **/fix** — when a principle violation caused a bug
+Skip for: refactoring (use /refactor), bug fixes (use /fix), pure implementation.
 
 ---
 
-## SOLID (TypeScript)
+## SOLID Quick Reference
 
-| Principle | Rule | Violation Sign |
-|-----------|------|----------------|
-| **S** — Single Responsibility | One class / module = one reason to change | A class that handles data fetching AND formatting AND rendering |
-| **O** — Open/Closed | Extend behavior without modifying core | Adding a new feature requires editing an existing class |
-| **L** — Liskov Substitution | Subtypes must be substitutable for their parent | `instanceof` type-narrowing guards spread throughout call sites |
-| **I** — Interface Segregation | Clients only depend on what they use | An interface with methods the implementor leaves empty or throws |
-| **D** — Dependency Inversion | Depend on abstractions, not concretions | `new DatabaseClient()` inside a service instead of constructor injection |
+Claude applies SOLID naturally — this checklist highlights the violation signs to actively scan for during design and review:
 
----
+| Violation Sign | Principle |
+|----------------|-----------|
+| Class with 2+ unrelated reasons to change | SRP |
+| Adding a feature requires editing an existing class | OCP |
+| `instanceof` guards spreading across call sites | LSP |
+| Interface with methods the implementor leaves empty or throws | ISP |
+| `new Dependency()` inside a service instead of constructor injection | DIP |
 
-## YAGNI / DRY / KISS
-
-**Rule of Three** — duplicate code twice; abstract only on the third occurrence.
-
-| Anti-pattern | Rule |
-|--------------|------|
-| Barrel exports (`index.ts` re-exporting everything) | Forbidden — creates implicit coupling |
-| Magic numbers | Forbidden — extract to a named constant |
-| `any` type | Forbidden — use `unknown` if type is uncertain |
-| Premature abstraction | Forbidden — three similar lines > one premature helper |
-| Speculative generality | Forbidden — design for current requirements only |
+If none of these appear, SOLID is satisfied — move on.
 
 ---
 
-## Naming Conventions
+## Function Length Limits
 
-| Context | Convention | Example |
-|---------|-----------|---------|
-| TS variables / functions | camelCase | `fetchUsers`, `isLoading` |
-| TS components / types / classes | PascalCase | `ProductCard`, `UserProfile` |
-| TS constants | SCREAMING_SNAKE_CASE | `MAX_RETRY_COUNT` |
-| Python functions / variables | snake_case | `get_user_status`, `retry_count` |
-| Python classes | PascalCase | `Product`, `OrderRecord` |
-| Environment variables | SCREAMING_SNAKE_CASE | `DATABASE_URL`, `API_KEY` |
-| DB tables | snake_case with prefix | `app_user_sessions` |
+These are project-specific limits Claude does not enforce by default.
+
+- TypeScript: **max 50 lines** per function body (excluding tests)
+- Python: **max 60 lines** (orchestration functions up to 100 when decomposition obscures sequential logic)
+
+When a function approaches the limit, extract helpers for distinct responsibilities.
 
 ---
 
-## TypeScript Standards
+## Dependency Direction
 
-- `strict: true` — no exceptions
-- Prefer `interface` over `type` for object shapes
-- Explicit return types on all exported functions
-- Max function body: **50 lines** (excluding tests)
-- No `any` — use `unknown` when type is uncertain
-- No barrel exports (`index.ts` re-exporting everything)
+```
+Pages/Routes → Layouts → Components/Islands → Lib/Utils → External APIs
+```
 
-**Import order:**
-1. Framework (`astro`, `react`)
-2. External libraries
-3. Internal absolute (`@/lib`, `@/components`)
-4. Relative imports (`./foo`, `../bar`)
-5. Type-only (`import type { ... }`)
+No reverse dependencies. No cross-subsystem imports.
+
+Depend on abstractions, not concretions — inject interfaces via constructor, not `new DatabaseClient()` inside services.
 
 ---
 
-## React Standards
+## Gotchas: Where Claude Gets It Wrong
 
-- Function components + Hooks only — no class components
-- ES Modules only (`import`/`export`) — no CommonJS (`require`/`module.exports`)
-- No `var` — use `const`/`let`
-- Co-locate component state as close as possible to where it's used
-- Lift state only when siblings genuinely need to share it
+These are patterns Claude tends to produce incorrectly without guidance.
 
----
+**1. Structured data classes vs plain dicts (Python)**
+Claude defaults to plain dicts everywhere. Use `@dataclass` for internal models with stable shape, `pydantic.BaseModel` at trust boundaries (API inputs, config), plain dicts only for dynamic/runtime-extensible structures.
 
-## Python Standards
+**2. Speculative generality**
+Claude tends to add "just in case" abstractions, extra config options, and hypothetical extension points. Design for current requirements only. Three similar lines of code > one premature helper.
 
-- PEP 8 + type hints on all function signatures for new code. For legacy codebases, prioritize adding type hints to public API boundaries; do not require retroactive annotation of all existing functions.
-- Max function body: **60 lines** (excluding tests). Orchestration functions (multi-step workflows, state machines) may justify up to 100 lines when decomposition would obscure sequential logic.
-- Google-style docstrings for public API functions. Internal helpers with self-explanatory names and signatures may omit docstrings.
-- Structured data classes instead of plain dicts — when the shape is known at development time and stable. Use `@dataclass` (stdlib, zero dependency) for internal models, `pydantic.BaseModel` at trust boundaries requiring validation (API inputs, config files), or `attrs`/`msgspec` when advanced features or high throughput are needed. Plain dicts remain appropriate for dynamic config (JSON-loaded settings, migration-heavy schemas, runtime-extensible structures).
-
-**Import order:**
-1. stdlib (`os`, `sys`, `datetime`)
-2. Third-party (`requests`, `httpx`, `pydantic`)
-3. Local / relative (`.models`, `..utils`)
+**3. Barrel exports**
+Claude creates `index.ts` files that re-export everything. Forbidden — creates implicit coupling. Import directly from source modules.
 
 ---
 
@@ -112,13 +75,6 @@ user-invocable: false
 
 | Check | Pass Condition |
 |-------|---------------|
-| Single Responsibility | Each module/class has exactly one reason to change |
-| No magic numbers | All constants are named |
-| No `any` | `unknown` used where type is uncertain |
-| Naming follows convention table | camelCase / PascalCase / snake_case applied correctly |
-| No barrel exports | `index.ts` does not re-export everything |
-| Function body within limit | ≤ 50 lines (TS) / ≤ 60 lines (Python, up to 100 for orchestration) |
-| Import order correct | Framework → external → internal → relative → type-only |
-| React: no class components | Only function components |
-| Python: type hints present | New code and public API boundaries annotated |
+| Function body within limit | 50 lines (TS) / 60 lines (Python) |
 | Dependencies injected | No `new Dependency()` inside service constructors |
+| No speculative abstractions | Only code needed for current requirements |
