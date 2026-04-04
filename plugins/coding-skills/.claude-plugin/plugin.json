@@ -1,7 +1,7 @@
 {
   "name": "coding-skills",
   "description": "Opinionated coding skills for TypeScript, React, and Python — spec-driven interface design, TDD workflows, SOLID principles, and code review.",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "author": {
     "name": "Victor",
     "url": "https://github.com/bouob"
