@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.MARKETPLACE_TOKEN }}
 
       - name: Generate marketplace.json from plugin.json files
         run: |
