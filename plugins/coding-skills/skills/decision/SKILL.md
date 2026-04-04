@@ -25,7 +25,7 @@ AI (Claude Opus, etc.) has solved most of the difficulty in writing code. **"Can
 | Build vs buy decisions | Yes |
 | Upgrade vs stay on current version | Yes |
 | Technology already decided, just implementing | No — just build |
-| Bug fix | No — use /debug |
+| Bug fix | No — use /diagnose or /fix |
 | Code-level design (interface, pattern) | No — use /principles or /spec |
 
 ## Related Skills

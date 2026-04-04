@@ -15,7 +15,7 @@ A [Claude Code plugin](https://docs.anthropic.com/en/docs/claude-code/plugins) f
 claude --plugin-dir ./coding-skills
 ```
 
-Skills: `/write`, `/fix`, `/review`, `/refactor`, `/debug`, `/spec`, `/decision`
+Skills: `/write`, `/fix`, `/review`, `/refactor`, `/diagnose`, `/spec`, `/decision`
 
 ## Skills
 
@@ -27,13 +27,13 @@ Skills: `/write`, `/fix`, `/review`, `/refactor`, `/debug`, `/spec`, `/decision`
 | `/fix <bug>` | Fix a bug (diagnose → Red → Green → Refactor) |
 | `/review [--staged \| path]` | Review local changes (style, tests, architecture) |
 | `/refactor [path \| module]` | Safe refactoring with smell analysis and TDD verification |
-| `/debug <error>` | Systematic root cause investigation before any fix |
+| `/diagnose <error>` | Diagnosis only — find root cause without code changes. Also loaded by `/fix`. |
 | `/spec <feature>` | Define interface contract (Given/When/Then + TypeScript interface + invariants) |
 | `/decision <A vs B>` | AI-era tech decision framework (4-dimension scoring + pre-mortem + exit plan) |
 
-### Methodology Skills (auto-loaded by workflows)
+### Methodology Skills (loaded by workflow instructions)
 
-These are not shown in the `/` menu. Claude loads them automatically when needed.
+These are not shown in the `/` menu. Workflow skills instruct Claude to load them at the appropriate step.
 
 | Skill | When auto-loaded |
 |-------|-----------------|
@@ -43,12 +43,13 @@ These are not shown in the `/` menu. Claude loads them automatically when needed
 
 ### Which skills each command loads
 
-| Command | `spec` | `principles` | `testing` | `debug` | `done` | `decision` |
+| Command | `spec` | `principles` | `testing` | `diagnose` | `done` | `decision` |
 |---------|:---:|:---:|:---:|:---:|:---:|:---:|
 | `/write` | if Spec Gate¹ | always | always | — | always | — |
 | `/fix` | — | if design problem | always | always | always | — |
 | `/review` | — | always | always | — | — | — |
 | `/refactor` | — | if SOLID violation | always | — | always | — |
+| `/diagnose` | — | — | — | standalone | — | — |
 | `/decision` | — | — | — | — | — | standalone |
 
 > ¹ **Spec Gate** — three questions before writing code: (1) Is this a bug fix or internal change? (2) Does a TypeScript interface already exist? (3) Can you name 3+ boundary cases immediately? If all YES → skip spec, go straight to TDD. Any NO → load `spec` first.
@@ -58,7 +59,7 @@ These are not shown in the `/` menu. Claude loads them automatically when needed
 **Two layers** — workflow skills provide step-by-step processes, methodology skills provide knowledge.
 
 - **Workflow skills** use numbered steps with explicit confirmation gates — Claude won't write code until you approve the plan
-- **Methodology skills** are auto-loaded by workflows based on context (e.g., `/fix` always loads `testing`, optionally loads `principles` if the root cause is structural)
+- **Methodology skills** are loaded by workflow instructions at the appropriate step (e.g., `/fix` always loads `testing`, optionally loads `principles` if the root cause is structural)
 - `disable-model-invocation: true` on workflow skills — no accidental auto-triggering
 
 ## Workflow

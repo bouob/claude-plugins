@@ -1,6 +1,6 @@
 ---
-name: debug
-description: 'Systematic debugging workflow — find root cause before proposing any fix. This skill should be used when encountering bugs, crashes, errors, test failures, unexpected behavior, build failures, stack traces, or performance problems. Do NOT skip to fixes before completing Phase 1.'
+name: diagnose
+description: 'Systematic diagnosis workflow — find root cause before proposing any fix. This skill should be used when encountering bugs, crashes, errors, test failures, unexpected behavior, build failures, stack traces, or performance problems. Do NOT skip to fixes before completing Phase 1.'
 argument-hint: [error | symptom]
 disable-model-invocation: true
 allowed-tools: Read, Edit, Grep, Glob,

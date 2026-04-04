@@ -1,6 +1,6 @@
 ---
 name: fix
-description: 'Fix a bug using TDD. Diagnose root cause, write a failing test, then fix. This skill should be used when the user asks to "fix a bug", "debug and fix", "find and fix", or encounters a failing test, crash, or regression that needs a code fix. For diagnosis only without fixing, use /debug instead.'
+description: 'Fix a bug using TDD. Diagnose root cause, write a failing test, then fix. This skill should be used when the user asks to "fix a bug", "debug and fix", "find and fix", or encounters a failing test, crash, or regression that needs a code fix. For diagnosis only without fixing, use /diagnose instead.'
 argument-hint: [bug description | error message]
 disable-model-invocation: true
 allowed-tools: Read, Edit, Write, Grep, Glob,
@@ -15,7 +15,7 @@ allowed-tools: Read, Edit, Write, Grep, Glob,
 
 | Skill | When to load |
 |-------|-------------|
-| **debug** | Always — systematic root cause investigation before fixing |
+| **diagnose** | Always — systematic root cause investigation before fixing |
 | **testing** | Always — core skill for reproducing and verifying fixes |
 | **principles** | Root cause involves a design problem (SRP violation, missing DI, coupling) |
 | **done** | Always — verify tests pass and no regressions before claiming fixed |

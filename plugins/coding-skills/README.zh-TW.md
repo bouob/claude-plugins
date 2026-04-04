@@ -15,7 +15,7 @@
 claude --plugin-dir ./coding-skills
 ```
 
-Skills：`/write`、`/fix`、`/review`、`/refactor`、`/debug`、`/spec`、`/decision`
+Skills：`/write`、`/fix`、`/review`、`/refactor`、`/diagnose`、`/spec`、`/decision`
 
 ## Skills
 
@@ -27,13 +27,13 @@ Skills：`/write`、`/fix`、`/review`、`/refactor`、`/debug`、`/spec`、`/de
 | `/fix <錯誤描述>` | 修復錯誤（診斷 → Red → Green → Refactor） |
 | `/review [--staged \| path]` | 審查本地變更（風格、測試、架構） |
 | `/refactor [path \| module]` | 安全重構，含壞味道分析與 TDD 驗證 |
-| `/debug <錯誤描述>` | 系統性根因調查，在修復前先找出問題 |
+| `/diagnose <錯誤描述>` | 純診斷 — 找出根因但不動程式碼。也會被 `/fix` 載入。 |
 | `/spec <功能描述>` | 定義介面契約（Given/When/Then + TypeScript interface + 不變量） |
 | `/decision <A vs B>` | AI 時代技術決策框架（四維度評分 + 預想失敗分析 + 退場方案） |
 
-### 方法論 Skills（由工作流程自動載入）
+### 方法論 Skills（由工作流程指令載入）
 
-不會出現在 `/` 選單，Claude 在需要時自動載入。
+不會出現在 `/` 選單，由工作流程 skill 在適當步驟指示 Claude 載入。
 
 | Skill | 自動載入時機 |
 |-------|------------|
@@ -43,12 +43,13 @@ Skills：`/write`、`/fix`、`/review`、`/refactor`、`/debug`、`/spec`、`/de
 
 ### 各指令載入的 Skills
 
-| 指令 | `spec` | `principles` | `testing` | `debug` | `done` | `decision` |
+| 指令 | `spec` | `principles` | `testing` | `diagnose` | `done` | `decision` |
 |------|:---:|:---:|:---:|:---:|:---:|:---:|
 | `/write` | Spec Gate 觸發時¹ | 總是 | 總是 | — | 總是 | — |
 | `/fix` | — | 設計問題時 | 總是 | 總是 | 總是 | — |
 | `/review` | — | 總是 | 總是 | — | — | — |
 | `/refactor` | — | SOLID 違反時 | 總是 | — | 總是 | — |
+| `/diagnose` | — | — | — | 獨立使用 | — | — |
 | `/decision` | — | — | — | — | — | 獨立使用 |
 
 > ¹ **Spec Gate** — 寫程式碼前的三個問題：(1) 這是 bug fix 或介面不變的修改嗎？(2) TypeScript interface 已存在嗎？(3) 現在就能列出 3 個以上的邊界案例嗎？三問全 YES → 跳過 spec 直接 TDD。任一 NO → 先載入 `spec`。
@@ -58,7 +59,7 @@ Skills：`/write`、`/fix`、`/review`、`/refactor`、`/debug`、`/spec`、`/de
 **兩層架構** — 工作流程 Skills 提供步驟化流程，方法論 Skills 提供知識。
 
 - **工作流程 Skills** 使用編號步驟加上明確確認關卡 — Claude 在你核准計畫前不會撰寫任何程式碼
-- **方法論 Skills** 由工作流程根據情境自動載入（例如 `/fix` 總是載入 `testing`，若根因涉及設計問題則額外載入 `principles`）
+- **方法論 Skills** 由工作流程指令在適當步驟載入（例如 `/fix` 總是載入 `testing`，若根因涉及設計問題則額外載入 `principles`）
 - 工作流程 Skills 皆設定 `disable-model-invocation: true` — 不會意外自動觸發
 
 ## 工作流程
