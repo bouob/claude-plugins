@@ -1,10 +1,10 @@
 ---
 name: itil
-description: 'ITIL 4 framework reference for IT service management. This skill should be used when handling incidents, creating change requests, conducting CAB reviews, classifying priority levels, or when asking about ITIL processes, practices, or terminology. Provides Incident Management, Change Enablement, and Priority Matrix guidance.'
+description: 'ITIL (Version 5) framework reference for IT service management and digital product management. This skill should be used when handling incidents, creating change requests, conducting CAB reviews, classifying priority levels, asking about ITIL v5 practices, AI governance, SRE integration, error budgets, or sustainability in IT operations. Provides Incident Management, Change Enablement, Priority Matrix, AI Governance (6C model), and SRE guidance.'
 user-invocable: false
 ---
 
-# ITIL 4 Framework Reference
+# ITIL (Version 5) Framework Reference
 
 ITIL 4 guidance for IT operations workflows. Provides process definitions, classification standards, and best practices for Incident Management and Change Enablement.
 
@@ -101,19 +101,27 @@ Key principles:
 
 For the full Change Enablement process, RFC template fields, and CAB review checklist, consult `references/change-enablement.md`.
 
-## ITIL 4 vs Earlier Versions
+## ITIL Version History
 
-ITIL 4 (2019) shifted from process-centric to value-centric:
-- 34 **Practices** (not "Processes") — emphasizing organizational capability
-- **Change Management** renamed to **Change Enablement**
-- 7 Guiding Principles: Focus on value, Start where you are, Progress iteratively, Collaborate, Think holistically, Keep it simple, Optimize and automate
+ITIL (Version 5) released 2026-02, building on ITIL 4 (2019):
+- 34 **Practices** retained — all ITIL 4 workflows remain 100% compatible
+- Scope expanded from IT service management to **digital product and service management**
+- Three new pillars: **AI Governance**, **Sustainability**, **UX-driven** service design
+- ITIL 4 → v5 bridge certification available (no full re-certification required)
 
-ITIL 5 (2026-02) retains all 34 practices with minor terminology updates. Adds AI Governance, Product lifecycle, and Sustainability. Current workflows remain compatible.
+For the full v5 change summary, see `references/itil-v5-overview.md`.
 
 ## Additional Resources
 
-### Reference Files
+### Core Process References
 
-- **`references/incident-management.md`** — Full incident process, roles, escalation matrix, major incident procedures
-- **`references/change-enablement.md`** — Full change process, RFC template, CAB review checklist, risk assessment matrix
+- **`references/incident-management.md`** — Full incident process, roles, escalation matrix, major incident procedures, AIOps integration
+- **`references/change-enablement.md`** — Full change process, RFC template, CAB review checklist, risk matrix, AI/ML and GitOps change patterns
 - **`references/priority-matrix.md`** — Detailed P1-P4 and SEV1-SEV4 definitions with examples and SLA guidance
+
+### ITIL v5 Extension References
+
+- **`references/itil-v5-overview.md`** — Complete v5 change summary, release timeline, terminology changes. Read when: user asks about ITIL v5 specifics or upgrade from v4
+- **`references/ai-governance-6c.md`** — 6C AI capability model, governance requirements, ITIL v5 AI principles. Read when: handling AI system changes or AI governance questions
+- **`references/sustainability.md`** — Sustainability dimensions in change decisions, ESG integration. Read when: change involves significant infrastructure or AI compute
+- **`references/sre-integration.md`** — SLI/SLO/SLA definitions, error budget, blameless postmortem principles, AIOps. Read when: incident involves error budget, or user asks about SRE practices

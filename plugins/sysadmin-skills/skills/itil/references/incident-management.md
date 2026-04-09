@@ -1,4 +1,4 @@
-# Incident Management — ITIL 4 Reference
+# Incident Management — ITIL (Version 5) Reference
 
 ## Process Flow
 
@@ -114,6 +114,63 @@ Always include "Next update by [time]" in every communication.
 | P2 | 2 hours |
 | P3 | 1 business day |
 | P4 | 3 business days |
+
+---
+
+## AI-Assisted Detection and Triage
+
+Modern environments increasingly use AIOps for incident detection. ITIL v5 integrates AI as a detection source while maintaining human authority over priority decisions.
+
+### AIOps as an Incident Source
+
+| Detection Method | Example | Governance Requirement |
+|---|---|---|
+| ML anomaly detection | System detects unusual latency spike before threshold breach | AI recommends severity; on-call engineer confirms before escalating |
+| Alert correlation | 50 raw alerts correlated into 1 root-cause incident | Correlation logic must be documented and reviewable |
+| Predictive detection | Capacity trending shows disk fill in 4 hours | Flag as proactive (SEV-4 / P4) pending human confirmation |
+| Log pattern matching | Error signature matches known failure mode | Link to Known Error record; on-call confirms before acting |
+
+### Governance Rules for AIOps Detections
+
+1. **AI recommends severity, human confirms**: AIOps systems should not auto-page P1 — they flag a suggested priority for on-call confirmation
+2. **Explainable alerts**: "Why did the AI flag this?" must have a traceable, auditable answer
+3. **Override always available**: On-call engineers can escalate or de-escalate AI-suggested priorities without approval
+4. **False positive feedback**: Dismissed AI alerts should feed back into model improvement — log the reason
+
+### AIOps and the Detection Step
+
+When AIOps is the detection source, update the Detection and Logging step:
+
+```
+Sources of incident detection (updated for AIOps environments):
+- Monitoring alerts (automated threshold-based)
+- AIOps / ML anomaly detection (AI-flagged, human-confirmed)
+- User-reported (service desk, email, chat)
+- Proactive detection (capacity thresholds, health checks, predictive models)
+```
+
+---
+
+## Error Budget and SLO Integration
+
+SRE error budgets directly influence incident priority when organizations operate with defined SLOs.
+
+### Error Budget Priority Adjustment
+
+| Error Budget Status | Incident Adjustment |
+|---|---|
+| > 50% remaining | Standard Impact × Urgency classification |
+| 10–50% remaining | Escalate P3 → P2; consider change freeze |
+| < 10% remaining | Escalate P2 → P1; freeze non-critical changes |
+| Exhausted (0%) | All incidents auto-P1; full change freeze until budget recovers |
+
+### SLO Breach as an Incident Trigger
+
+An SLO breach is itself an incident, even if no individual component has failed:
+- SEV-2 / P2 when SLO is at risk of breaching within the current measurement window
+- SEV-1 / P1 when SLO is already breached and customer SLA is at risk
+
+For full SLO/Error Budget definitions, see `sre-integration.md`.
 
 ---
 

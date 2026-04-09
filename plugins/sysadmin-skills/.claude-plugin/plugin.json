@@ -1,7 +1,7 @@
 {
   "name": "sysadmin-skills",
   "description": "ITIL 4-based IT operations skills for system administrators — incident response, change management with CAB review, and status communication.",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "author": {
     "name": "Victor",
     "url": "https://github.com/bouob"

@@ -1,6 +1,6 @@
 ---
 name: incident
-description: 'IT incident response workflow. This skill should be used when the user asks to "log an incident", "handle an incident", "create incident report", "document an outage", "incident response", "service is down", "major incident", or describes a service disruption requiring structured response. Guides through the full ITIL incident lifecycle: detect, classify, investigate, resolve, communicate, and close.'
+description: 'IT incident response workflow. This skill should be used when the user asks to "log an incident", "handle an incident", "create incident report", "document an outage", "incident response", "service is down", "major incident", or describes a service disruption requiring structured response. Also use when the user mentions SRE concepts like error budget impact, blameless review, or AIOps-detected incidents. Guides through the full ITIL v5 incident lifecycle: detect, classify, investigate, resolve, communicate, and close.'
 allowed-tools:
   - Read
   - Write
@@ -162,6 +162,11 @@ Complete the incident report:
 - Note if a Post-Incident Review is needed (mandatory for P1/P2, recommended for P3)
 - Recommend creating a Problem record if root cause is unknown
 - Present the final report to the user for review
+
+**SRE Postmortem (for SEV-1 and SEV-2):** If this was a SEV-1 or SEV-2 incident, a traditional PIR may not be sufficient. Prompt the user:
+> "This was a {SEV-1/SEV-2} incident. Consider running a blameless postmortem using `/postmortem` — it produces a more systematic analysis with contributing factors, what went well, and SMART action items. Use `/problem` if root cause is unknown and the incident is likely to recur."
+
+**Error budget:** If the organization tracks SLOs, note the estimated error budget impact in the follow-up section.
 
 ---
 

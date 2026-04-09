@@ -1,6 +1,6 @@
 ---
 name: change-request
-description: 'ITIL change request and CAB review workflow. This skill should be used when the user asks to "create a change request", "write an RFC", "plan a change", "CAB review", "change management", "schedule maintenance", "server migration plan", "upgrade plan", or describes any planned modification to IT infrastructure or services. Produces a complete RFC document following ITIL 4 Change Enablement.'
+description: 'ITIL change request and CAB review workflow. This skill should be used when the user asks to "create a change request", "write an RFC", "plan a change", "CAB review", "change management", "schedule maintenance", "server migration plan", "upgrade plan", "AI model deployment", "GitOps change", or describes any planned modification to IT infrastructure or services. Produces a complete RFC document following ITIL v5 Change Enablement.'
 allowed-tools:
   - Read
   - Write
@@ -67,6 +67,10 @@ Determine the change type using the **itil** skill:
 
 > **Clarification:** Compliance deadlines or business mandates with hard dates are **Normal** changes (with appropriate urgency), not Emergency. Emergency is reserved for active incidents or immediate security threats requiring same-day implementation.
 
+> **AI / ML System Changes:** If the change involves any AI or ML component (model update, prompt change, training data, RAG index, AI autonomy scope), load `itil/references/change-enablement.md` and follow the "AI / ML System Changes" section. Changes involving Cognition or Coordination capabilities require Normal (Significant) classification at minimum.
+
+> **GitOps / IaC Changes:** Changes delivered via pull request and automated pipeline may qualify as Standard if they meet pre-authorization criteria. See `itil/references/change-enablement.md` → "GitOps / IaC Change Pattern".
+
 For Normal changes, further classify risk level:
 - **Minor**: Low risk, Change Manager approval sufficient
 - **Significant/Major**: Requires full CAB review
@@ -91,7 +95,9 @@ Rate each dimension 1-3, multiply for Risk Score:
 | 4-6 | **Medium** | CAB review recommended |
 | 1-3 | **Low** | Change Manager approval |
 
-MUST include the risk assessment table in the RFC with this exact format:
+MUST include the risk assessment table in the RFC with this exact format.
+
+> **Sustainability note:** If the change involves significant compute (AI model deployment, server provisioning >10 units, cloud region migration), add the optional Sustainability assessment from `itil/references/sustainability.md` to the Risk Assessment section.
 
 ```
 | Dimension | Rating | Justification |
