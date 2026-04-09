@@ -1,6 +1,6 @@
 ---
 name: done-ops
-description: 'Operations task verification gate before claiming work is complete. This skill should be used before closing incidents, finalizing change requests, sending resolution notifications, or when asking "is this resolved?", "can we close this?", "is the change complete?". Evidence before claims — verify operational status first.'
+description: 'Operations task verification gate before claiming work is complete. This skill should be used before closing incidents, finalizing change requests, sending resolution notifications, or when asking "is this resolved?", "can we close this?", "is the change complete?", or verifying SLO compliance after an incident. Evidence before claims — verify operational status first.'
 user-invocable: false
 ---
 
@@ -49,6 +49,7 @@ Before claiming any operational task is complete:
 | Documentation complete | Timeline, actions taken, resolution, and follow-up items recorded |
 | Problem record | Created if root cause is unknown or incident is recurring |
 | Communication sent | Resolution notification sent to all parties who received the initial alert |
+| SLO compliance checked | (Optional) Error budget impact estimated; note if budget is now < 10% |
 
 ### Change Request Closure
 

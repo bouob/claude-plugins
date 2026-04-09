@@ -1,4 +1,4 @@
-# Change Enablement — ITIL 4 Reference
+# Change Enablement — ITIL (Version 5) Reference
 
 ## Process Flow
 
@@ -148,3 +148,94 @@ Standard changes are pre-authorized by CAB as categories. Maintain a catalog:
 | Certificate renewal | 30-day advance notice | SOP-020 |
 
 New standard change types must be approved by CAB before inclusion in the catalog.
+
+---
+
+## AI / ML System Changes
+
+AI and machine learning system changes require additional governance beyond the standard RFC, as defined by ITIL v5 AI Governance (see `ai-governance-6c.md`).
+
+### What Counts as an AI System Change
+
+| Change Type | Examples |
+|---|---|
+| Model update | Retraining, fine-tuning, upgrading to a new model version |
+| Prompt engineering | Modifying system prompts, adding/removing instructions, changing output format |
+| Training data | Adding new data sources, re-weighting, removing data segments |
+| RAG / knowledge base | Updating indexed documents, changing chunking strategy, switching embeddings |
+| AI autonomy scope | Expanding what the AI can do without human approval |
+
+### Additional RFC Fields for AI Changes
+
+Include these fields in the RFC when any AI/ML component is affected:
+
+```
+| Field                   | Value |
+|---|---|
+| Model version (before)  | {current model name/version} |
+| Model version (after)   | {target model name/version} |
+| Training data lineage   | {data source description and date range} |
+| 6C capabilities affected| {Creation / Cognition / Coordination / etc.} |
+| Bias/fairness tested    | Yes (attach results) / No (document why not) |
+| Explainability level    | Full / Partial / Black-box |
+| Human approval points   | {list checkpoints where humans review AI output} |
+```
+
+### Authorization for AI Changes
+
+Changes involving **Cognition** or **Coordination** capabilities (AI making decisions or triggering workflows) are treated as Normal (Significant) regardless of technical complexity. Full CAB review required.
+
+### AI Change Rollback
+
+Rollback for AI changes means reverting to the previous model version or prompt, not just infrastructure rollback. Rollback plan must specify:
+- How to restore previous model artifacts
+- How to verify the rollback is complete (not just infrastructure up, but AI behavior correct)
+- Maximum acceptable time to detect AI behavior regression (typically < 1 hour in production)
+
+---
+
+## GitOps / IaC Change Pattern
+
+Infrastructure changes delivered via code (pull requests, Terraform, Helm) can be classified as Standard Changes when they meet pre-authorization criteria.
+
+### Pre-Authorization Criteria for GitOps Standard Changes
+
+A GitOps/IaC change qualifies as Standard when ALL of the following are true:
+
+- [ ] Change is implemented as code in version control (Git)
+- [ ] Automated test suite covers the change (unit + integration minimum)
+- [ ] At least one peer review approved in the PR
+- [ ] Deployment pipeline includes automated rollback (e.g., previous Helm release, Terraform state revert)
+- [ ] Change is scoped to a defined boundary (single service, single namespace, single environment)
+- [ ] The change type is in the approved Standard Change Catalog
+
+### GitOps Change Classification
+
+| Scenario | ITIL Classification | Why |
+|---|---|---|
+| Routine config update via PR (meets all criteria above) | Standard | Pre-authorized, automated rollback |
+| Multi-service Terraform refactor | Normal (Significant) | Complex dependencies, higher blast radius |
+| Production database schema migration via code | Normal (Major) — requires CAB | High risk even if automated |
+| Emergency hotfix via direct commit | Emergency | Normal process bypassed, abbreviated RFC + retrospective required |
+
+### Change Record for GitOps Changes
+
+For Standard GitOps changes, link the PR as the RFC. The PR description serves as the business justification and implementation plan. Post-Implementation Review is the PR merge discussion or deployment pipeline summary.
+
+---
+
+## Sustainability Impact (Optional Dimension)
+
+For changes with significant infrastructure footprint, add the Sustainability assessment from `sustainability.md`:
+
+```
+Sustainability assessment (add when change involves significant compute or hardware):
+| Dimension           | Rating           | Notes |
+|---|---|---|
+| Energy impact       | Low/Medium/High  | {Region, compute estimate} |
+| Hardware lifecycle  | Low/Medium/High  | {New hardware? Virtualized?} |
+| Carbon offset       | Covered/Partial/None | {Provider commitment} |
+```
+
+Required for: AI model deployments, server provisioning (>10 units), cloud region migrations.
+Optional for: routine application changes, config updates, certificate renewals.
