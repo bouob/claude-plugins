@@ -30,14 +30,14 @@ jobs:
           PLUGINS="[]"
           for pjson in plugins/*/.claude-plugin/plugin.json; do
             [ -f "$pjson" ] || continue
-            PLUGIN_DIR=$(echo "$pjson" | sed 's|plugins/\([^/]*\)/.*||')
+            PLUGIN_DIR=$(echo "$pjson" | awk -F/ '{print $2}')
 
             P_NAME=$(jq -r '.name' "$pjson")
             P_DESC=$(jq -r '.description' "$pjson")
             P_KEYWORDS=$(jq -c '.keywords // []' "$pjson")
             P_LICENSE=$(jq -r '.license // "MIT"' "$pjson")
 
-            ENTRY=$(jq -n               --arg name "$P_NAME"               --arg source "./plugins/$PLUGIN_DIR"               --arg desc "$P_DESC"               --argjson kw "$P_KEYWORDS"               --arg lic "$P_LICENSE"               '{name: $name, source: $source, description: $desc, keywords: $kw, license: $lic}')
+            ENTRY=$(jq -n --arg name "$P_NAME" --arg source "./plugins/$PLUGIN_DIR" --arg desc "$P_DESC" --argjson kw "$P_KEYWORDS" --arg lic "$P_LICENSE" '{name: $name, source: $source, description: $desc, keywords: $kw, license: $lic}')
 
             PLUGINS=$(echo "$PLUGINS" | jq --argjson e "$ENTRY" '. + [$e]')
           done
@@ -46,7 +46,7 @@ jobs:
           PLUGINS=$(echo "$PLUGINS" | jq 'sort_by(.name)')
 
           # Reconstruct marketplace.json
-          jq -n             --arg name "$NAME"             --argjson owner "$OWNER"             --argjson meta "$METADATA"             --argjson plugins "$PLUGINS"             '{name: $name, owner: $owner, metadata: $meta, plugins: $plugins}'             > "$MARKETPLACE.tmp"
+          jq -n --arg name "$NAME" --argjson owner "$OWNER" --argjson meta "$METADATA" --argjson plugins "$PLUGINS" '{name: $name, owner: $owner, metadata: $meta, plugins: $plugins}' > "$MARKETPLACE.tmp"
 
           mv "$MARKETPLACE.tmp" "$MARKETPLACE"
 
