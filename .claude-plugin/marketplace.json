@@ -12,22 +12,48 @@
     {
       "name": "claude-statusline",
       "source": "./plugins/claude-statusline",
-      "description": "Zero-dependency statusline with rainbow progress bar, 10 themes, rate limit monitoring, and natural language config.",
-      "keywords": ["statusline", "rainbow", "themes", "rate-limit"],
+      "description": "Zero-dependency statusline for Claude Code with rainbow progress bar, 10 themes, rate limit monitoring, and natural language configuration.",
+      "keywords": [
+        "statusline",
+        "status-bar",
+        "rainbow",
+        "themes",
+        "rate-limit",
+        "progress-bar"
+      ],
       "license": "MIT"
     },
     {
       "name": "coding-skills",
       "source": "./plugins/coding-skills",
-      "description": "Opinionated coding skills for TypeScript, React, and Python — TDD workflows, SOLID principles, spec-driven design, and code review.",
-      "keywords": ["tdd", "sdd", "typescript", "react", "python", "code-review", "solid"],
+      "description": "Opinionated coding skills for TypeScript, React, and Python — spec-driven interface design, TDD workflows, SOLID principles, and code review.",
+      "keywords": [
+        "tdd",
+        "sdd",
+        "spec-driven",
+        "typescript",
+        "react",
+        "python",
+        "code-review",
+        "solid"
+      ],
       "license": "MIT"
     },
     {
       "name": "sysadmin-skills",
       "source": "./plugins/sysadmin-skills",
-      "description": "ITIL 4-based IT operations skills — incident response, change management with CAB review, and status communication.",
-      "keywords": ["itil", "itsm", "incident-response", "change-management", "sysadmin"],
+      "description": "ITIL 4-based IT operations skills for system administrators — incident response, change management with CAB review, and status communication.",
+      "keywords": [
+        "itil",
+        "itsm",
+        "incident-response",
+        "change-management",
+        "cab-review",
+        "statuspage",
+        "sysadmin",
+        "it-operations",
+        "runbook"
+      ],
       "license": "MIT"
     }
   ]
