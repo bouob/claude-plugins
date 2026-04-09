@@ -13,7 +13,8 @@
     "status-bar",
     "rainbow",
     "themes",
-    "rate-limit"
+    "rate-limit",
+    "progress-bar"
   ],
   "hooks": {
     "SessionStart": [
