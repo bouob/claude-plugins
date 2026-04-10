@@ -18,8 +18,7 @@
         "status-bar",
         "rainbow",
         "themes",
-        "rate-limit",
-        "progress-bar"
+        "rate-limit"
       ],
       "license": "MIT"
     },
