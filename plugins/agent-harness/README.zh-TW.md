@@ -109,6 +109,33 @@ Schema：`skills/sprint/references/config-schema.md`。
 - 最大化平行需要啟用 Agent Teams（`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`）
 - Playwright MCP（選用）供 Evaluator 階段進行真實 UI 驗證
 
+## 多 Host 路線圖
+
+agent-harness 主場景仍是 Claude Code plugin。v0.3.0 開始鋪基礎建設，讓
+**Codex CLI（OpenAI）** 與 **Auggie CLI（AugmentCode）** 能以兩種角色介入：
+(a) 在 Claude Code `/sprint` 裡當特定 Generator 任務的後端引擎；
+(b) 在 v0.6.0 之後成為 standalone host，直接驅動降級版的 sprint 流程。
+
+| 版本 | 範圍 | 狀態 |
+|------|------|------|
+| **v0.2.0** | 純 Claude Code — Planner / Generator / Evaluator 全部用 Claude 模型 | 已發布 |
+| v0.3.0 | vendor-neutral schemas（`sprint-contract.schema.md`、`engine-flag-matrix.md`、`cross-host-deployment.md`）+ adapter / template stubs。執行行為與 v0.2.0 相同。 | 已發布 |
+| **v0.3.1** | **Host 與 backend 偵測**（`adapters/detect-host.sh` + `.ps1`、`init` Step 0a/0b、`--detect-only` 旗標） | **目前版本** |
+| v0.4.0 | Config schema v2 加 `engine` 欄位；v1 自動 lift；wizard Step 0 完整互動 | 規劃中 |
+| v0.4.1 | Codex 後端執行 Generator 任務（透過 `adapters/run-codex.sh` Bash shell-out） | 規劃中 |
+| v0.5.0 | Auggie 後端執行 Generator 任務（`adapters/run-auggie.sh` + JSON envelope 正規化） | 規劃中 |
+| v0.5.1 | 跨工具部署：產生 `AGENTS.md`、symlink `.codex/skills/`、寫入 `.augment/rules/agent-harness.md` | 規劃中 |
+| v0.6.0 | Codex CLI / Auggie CLI 作為主 host（sequential 降級、AGENTS.md 驅動） | 規劃中 |
+
+完整功能在各 host 的可用性矩陣，見 `skills/sprint/references/cross-host-deployment.md`。
+
+各引擎的 CLI 旗標對照與 sprint contract 滿足條件，見
+`skills/sprint/references/engine-flag-matrix.md`。
+
+v0.3.0 新引入 vendor-neutral 路徑 token `${AGENT_HARNESS_ROOT}` 作為
+`${CLAUDE_PLUGIN_ROOT}` 的同義詞。Claude Code v0.3.x 下兩者等價；v0.6.0
+之後其他 host 會把新 token 替換到自己的安裝目錄。
+
 ## 授權
 
 MIT

@@ -1,7 +1,7 @@
 ---
 description: Initialize agent-harness model routing for your Claude tier (subscription or API)
 allowed-tools: Read, Write, AskUserQuestion, Bash
-argument-hint: ""
+argument-hint: "[--detect-only]"
 ---
 
 # /agent-harness:init — Configure Model Routing
@@ -12,7 +12,91 @@ Generator). Defaults assume Opus access; this wizard lets users on Pro/Team
 subscriptions, Sonnet-only API keys, or any other access shape route around
 the assumption.
 
+v0.3.1 introduces a Step 0 detection layer that probes which agent CLIs
+are installed locally (Claude Code / Codex / Auggie) and reports back. The
+wizard's interactive Step 0c–0e (host selection + cross-tool deployment)
+land in v0.4.0; for v0.3.1 detection is informational only.
+
+Flags:
+- `--detect-only` — run Step 0 and exit (no questions, no writes). Useful
+  for verifying the host detection layer before committing to reconfigure.
+
 Schema reference: `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/config-schema.md`.
+Detection contract: `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/cross-host-deployment.md`.
+
+---
+
+## Step 0 — Detect Host & Backends (v0.3.1+)
+
+### Step 0a — Run the detector script
+
+Pick the script for the current OS and capture its stdout (each line is
+`key=value`):
+
+```bash
+# POSIX (Linux / macOS / Git Bash on Windows)
+bash "${CLAUDE_PLUGIN_ROOT}/adapters/detect-host.sh"
+```
+
+Or on native Windows PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/adapters/detect-host.ps1"
+```
+
+Either script always exits 0. Parse the output into the following keys
+(treat missing keys as `0` / empty for safety):
+
+```
+claude_installed   codex_installed   auggie_installed
+codex_authed       codex_configured  auggie_authed
+running_host       plugin_root       os
+```
+
+If the detector itself errors (e.g. PowerShell blocked by execution policy),
+fall back to noting "host detection unavailable" and skip to Step 1 with
+defaults — never abort init on detection failure.
+
+### Step 0b — Display detection table
+
+Render a markdown table to the user before any further questions:
+
+```
+Detected environment:
+
+| CLI          | Installed | Authed | Configured | Running here? |
+|--------------|-----------|--------|------------|---------------|
+| claude-code  | <claude_installed> | -                 | -                  | <if running_host=claude-code: ✓ else blank> |
+| codex        | <codex_installed>  | <codex_authed>    | <codex_configured> | <if running_host=codex:       ✓ else blank> |
+| auggie       | <auggie_installed> | <auggie_authed>   | -                  | <if running_host=auggie:      ✓ else blank> |
+
+(✓ = yes, ✗ = no, - = not applicable)
+
+Detected primary host: <running_host>
+Detected ready secondary backends: <comma-separated list of CLIs that are installed AND authed AND not the running_host>
+```
+
+When `running_host=unknown` (e.g. detector found no obvious signal), print:
+
+> "Host could not be auto-detected. v0.3.1 will assume `claude-code` for
+> Step 1 onward. v0.4.0 will ask explicitly."
+
+### Step 0c–0e — Reserved for v0.4.0
+
+Interactive prompts for primary-host selection, secondary-deployment toggles,
+and final-action confirmation are scoped to v0.4.0. v0.3.1 prints the
+detection report and proceeds to Step 1 unchanged.
+
+### `--detect-only` short-circuit
+
+If `$ARGUMENTS` contains the literal token `--detect-only`:
+
+1. Run Step 0a + 0b
+2. Print "Detection complete. No config changes made."
+3. Exit (do NOT proceed to Step 1)
+
+Use this for diagnostics — e.g. before opening a GitHub issue about which
+backend Step 0 misidentifies.
 
 ---
 
@@ -186,3 +270,6 @@ After writing, tell the user:
 - The wizard never validates whether the chosen models are actually available to the user; if they pick a model their access level doesn't include, `/sprint` will fail at the relevant subagent spawn
 - Pretty-print JSON with 2-space indent (matches statusline convention) so the file remains hand-editable
 - Do not rename the existing config silently if the user picks Cancel; only Step 5 writes the file
+- Step 0 detection (v0.3.1+) is informational; it never aborts init even when the detector script fails. If `running_host=unknown`, default behaviour falls through to claude-code assumptions exactly like v0.3.0
+- `--detect-only` is the only flag that short-circuits — all other paths run Step 1 onwards regardless of detection results
+- The detector emits keys it knows about; v0.4.0 will add new keys (e.g. `auggie_session_kind=personal|service-account`) without removing existing ones — parsers must tolerate unknown keys

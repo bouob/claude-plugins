@@ -1,0 +1,14 @@
+# codex-config-patch.toml — Suggested ~/.codex/config.toml additions (v0.5.x)
+#
+# STATUS: STUB. Full template lands in v0.5.1.
+#
+# Important:
+#   init NEVER writes to ~/.codex/config.toml automatically. This file is
+#   printed verbatim to the user during init Step 5 so they can paste-and-merge
+#   manually. Auto-modifying a user's global config is out of scope.
+#
+# Planned content:
+#   project_doc_fallback_filenames = ["CLAUDE.md", "AGENTS.md"]
+#   project_doc_max_bytes = 65536  # default 32 KiB is tight for sprint-plan.md
+
+# stub — see commands/init.md Step 5 (v0.5.1) for the print-and-instruct flow
