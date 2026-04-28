@@ -19,26 +19,42 @@ hooks:
 
 # /sprint — Autonomous Multi-Agent Sprint
 
+## Tip — Plan Mode First (recommended)
+
+For ambiguous specs (vague verbs, missing acceptance criteria, multiple
+possible interpretations), **enter plan mode** before invoking `/sprint`:
+
+- Most models reason more carefully in plan mode and surface clarifying
+  questions before committing to a workspace
+- The Planner phase still runs, but starts from a sharpened spec rather
+  than the original 1-sentence prompt
+- Press `Esc` then `P` (Claude Code default) or your terminal's
+  plan-mode keybinding to enter
+
+This is a recommendation, not a requirement. Crisp specs (single
+concrete deliverable, clear acceptance) can skip plan mode and run
+`/sprint` directly.
+
 ## Path Token Convention (v0.3.0+)
 
 Inside this skill, `${CLAUDE_PLUGIN_ROOT}` is the active path-substitution
-token under Claude Code. v0.3.0 also introduces `${AGENT_HARNESS_ROOT}` as
-the vendor-neutral synonym — when this skill is invoked from Codex or Auggie
-host runtimes (v0.6.0 target), they will substitute `${AGENT_HARNESS_ROOT}`
-to the equivalent install directory. **For v0.3.x the two are equivalent
-under Claude Code; treat them as aliases.**
+token under Claude Code. v0.3.0 introduced `${AGENT_HARNESS_ROOT}` as
+the vendor-neutral synonym — when this skill is invoked from Codex or
+Auggie host runtimes (v0.6.0 target), they will substitute
+`${AGENT_HARNESS_ROOT}` to the equivalent install directory. **Under
+Claude Code v0.4.x the two are equivalent; treat them as aliases.**
 
-For new references shipped in v0.3.0:
-- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/sprint-contract.schema.md` —
+References (read on demand):
+- `${AGENT_HARNESS_ROOT}/skills/sprint/references/config-schema.md` —
+  routing config, schema v2 (auto-lifts v1)
+- `${AGENT_HARNESS_ROOT}/skills/sprint/references/sprint-contract.schema.md` —
   vendor-neutral artifact schema (consumed by all engines)
-- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/engine-flag-matrix.md` —
+- `${AGENT_HARNESS_ROOT}/skills/sprint/references/engine-flag-matrix.md` —
   CLI flag mapping for Claude Code / Codex / Auggie generator backends
-- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/cross-host-deployment.md` —
+- `${AGENT_HARNESS_ROOT}/skills/sprint/references/model-registry.md` —
+  valid model IDs per engine (verified per release)
+- `${AGENT_HARNESS_ROOT}/skills/sprint/references/cross-host-deployment.md` —
   host detection and degradation matrix
-
-Phases 2–5 will start consuming these references in v0.4.x. v0.3.0 ships
-them as scaffolding; the runtime behaviour of `/sprint` is unchanged from
-v0.2.0.
 
 ---
 
@@ -56,42 +72,88 @@ If arguments are empty: ask the user for a spec before proceeding.
 
 Read configuration in this order; the first existing file wins for any given
 field, and later sources only fill in missing fields. Built-in defaults
-backfill anything nobody set.
+backfill anything nobody set. **Path lookup depends on host** — see
+`config-schema.md` § Lookup Order for the full table.
 
+Default lookup (when host is unknown or claude-code):
 1. `./.claude/agent-harness.local.json` — project-level override
 2. `~/.claude/agent-harness.json` — user-level
-3. Built-in defaults (see `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/config-schema.md`)
+3. Built-in defaults
 
 For each Read attempt, treat ENOENT (file not found) as `{}` — never error on
-missing config. The schema is documented in
-`${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/config-schema.md`.
+missing config.
 
-Hold the resolved values in scope as:
+### Schema v1 → v2 auto-lift
 
-- `{planner_model}` — substituted into Phase 2b
-- `{evaluator_model}` — substituted into Phase 5b
+If the loaded config has `version: 1` or no `version` field:
+
+1. Determine the engine to attribute v1 string models to:
+   - If config has a top-level `host` field → use that as engine
+   - Else run `adapters/detect-host.sh` (or `.ps1` on Windows) and read
+     `running_host`
+   - If `running_host=unknown` → ABORT and report:
+     > "v1 config without host field cannot be auto-lifted in an
+     > ambiguous environment. Re-run `/agent-harness:init` (optionally
+     > with `--host=<name>`) to regenerate with explicit host."
+2. For each role under `models.*`:
+   - If value is a string: replace with `{ engine: <inferred>, model: <string> }`
+   - If value is already an object: keep as-is
+3. Set `version: 2` and `host: <inferred>`
+4. Write the lifted v2 back to the same path
+
+The lift only adds structure; model strings are preserved verbatim.
+
+### Validate against model-registry
+
+For each `models.*.{engine, model}`:
+- Check `engine` is in `{claude, codex, auggie}` — else ABORT with the
+  specific role / engine name
+- Check `model` is in the registry list for that engine
+  (`${AGENT_HARNESS_ROOT}/skills/sprint/references/model-registry.md`)
+- Unknown model with `engine=auggie` → WARN ("BYOM allowed but not
+  validated"); proceed
+- Unknown model with `engine=claude` or `codex` → ABORT, suggest
+  re-running init
+
+### Hold resolved values in scope
+
+- `{planner_engine}` + `{planner_model}` — substituted into Phase 2b
+- `{evaluator_engine}` + `{evaluator_model}` — substituted into Phase 5b
 - `{generator_routing_table}` — a 4-row markdown table built from
   `models.generator.{code,write,research,collect}`, with columns
-  `type | model | when to use`. Use the same `when to use` text as the schema
-  doc:
+  `type | engine | model | when to use`. Use the schema doc text:
   - `code` — implementing features, fixing bugs, writing tests
   - `write` — long-form text, documentation, structured reports
   - `research` — synthesizing multiple sources, connecting concepts
   - `collect` — fetching data, format conversion, file discovery
 
+### Defaults & hints
+
 **Built-in defaults (when no config file exists)**: every role uses
-`sonnet`. This is conservative — Sonnet is available on every subscription
-tier and most API plans, so `/sprint` runs without model-access errors.
+`{engine: claude, model: sonnet}`. This is conservative — Claude Sonnet
+is available on every subscription tier and most API plans, so `/sprint`
+runs without model-access errors. **Note:** if the host is detected as
+`codex` or `auggie` and there is no config, /sprint cannot use Claude
+defaults — it will print:
+> "Detected host=<host> with no config. Run /agent-harness:init first
+> so /sprint knows which models to route to."
+> and abort cleanly.
 
-**Print this hint when running with built-in defaults** (no config file
-found at any layer): "Using safe defaults (all Sonnet). Planner quality is
-better with Opus — run /agent-harness:init to upgrade if you have Opus
-access."
+**Print this hint when running with built-in defaults under claude-code**
+(no config file found at any layer): "Using safe defaults (all
+claude/sonnet). Planner quality is better with Opus — run
+/agent-harness:init to upgrade if you have Opus access."
 
-If `{planner_model}` resolves to `opus` (because the user picked `full-access`
-in the wizard) and the user has no Opus access, the Phase 2 spawn will
-fail. Recover by re-running `/agent-harness:init` and selecting a
-non-Opus preset.
+**Plan-mode tip**: print on Phase 0 finish (always):
+> "Tip: ambiguous spec? Plan mode often catches mis-understandings before
+> the workspace is created."
+
+### When the spawn would fail
+
+If `{planner_model}` resolves to a model the user lacks access to (e.g.
+`opus` without Opus subscription, or `gpt-5.5` without that beta), the
+Phase 2 spawn will fail at first turn. Recover by re-running
+`/agent-harness:init` and selecting an accessible preset.
 
 ---
 
@@ -124,7 +186,23 @@ Step 2a: Read these files and hold their full text in memory:
 - `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/planner.md` → PLANNER_CONTENT
 - `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/handoff-schema.md` → SCHEMA_CONTENT
 
-Step 2b: Spawn a subagent (model: {planner_model}) with a prompt assembled from these parts in order:
+Step 2b: Spawn the Planner using `{planner_engine}` + `{planner_model}`:
+
+- If `{planner_engine}` == `claude` → spawn via the `Agent` tool with
+  `model: {planner_model}`.
+- If `{planner_engine}` == `codex` or `auggie` → write the prompt to
+  `{workspace}/.prompts/planner.md` and run via Bash:
+  - codex:  `bash ${AGENT_HARNESS_ROOT}/adapters/run-codex.sh planner {workspace} {planner_model} {workspace}/.prompts/planner.md`
+  - auggie: `bash ${AGENT_HARNESS_ROOT}/adapters/run-auggie.sh planner {workspace} {planner_model} {workspace}/.prompts/planner.md`
+  Each adapter writes the final assistant message to
+  `{workspace}/sprint-plan.md` (auggie via post-processing).
+  Adapters are stubs in v0.4.0 and exit 64; full implementation lands
+  in v0.4.1 (codex) / v0.5.0 (auggie). Until then, on non-claude
+  engines, fall back to a clear error: "Planner engine={engine} not yet
+  runnable; v0.4.0 ships scaffolding only. Use claude planner or wait
+  for v0.4.1+."
+
+Prompt assembled from these parts in order:
 
 ```
 {PLANNER_CONTENT — paste full text}
@@ -139,7 +217,7 @@ Step 2b: Spawn a subagent (model: {planner_model}) with a prompt assembled from 
 
 ## Resolved Model Routing Table (assigned by orchestrator for this sprint)
 
-{generator_routing_table — paste the 4-row table built in Phase 0}
+{generator_routing_table — paste the 4-row table built in Phase 0; columns are type | engine | model | when to use}
 
 ---
 
@@ -149,8 +227,9 @@ SPEC: {$ARGUMENTS verbatim}
 WORKSPACE: {workspace}
 
 Write `{workspace}/sprint-plan.md` following the sprint-plan.md schema exactly.
-Use the Resolved Model Routing Table above to assign each task's `model` field
-based on its `type`.
+Use the Resolved Model Routing Table above to assign each task's `engine`
+AND `model` fields based on its `type`. Both fields are required per task
+in v0.4.0+ — see sprint-contract.schema.md.
 After writing the file, output exactly: PLANNER DONE
 ```
 
@@ -197,25 +276,51 @@ Find your TASK_ID in the Sprint Plan above and implement it.
 Write your output to `{workspace}/sprint-progress/{task-id}.md` following the sprint-progress schema.
 ```
 
-Step 3b: Check Agent Teams availability:
+Step 3b: For each task, branch on `task.engine` (read from sprint-plan.md):
+
+### Branch by engine
+
+- **engine == claude** → spawn via the `Agent` tool with `model: task.model`.
+  Parallel via Agent Teams (see Step 3c) when applicable.
+- **engine == codex** → write task prompt to `{workspace}/.prompts/{task-id}.md`,
+  then run via Bash:
+  ```bash
+  bash ${AGENT_HARNESS_ROOT}/adapters/run-codex.sh \
+    {task-id} {workspace} {task.model} {workspace}/.prompts/{task-id}.md
+  ```
+  Adapter writes `{workspace}/sprint-progress/{task-id}.md` directly via
+  `codex exec --output-last-message`. v0.4.0 ships stub; v0.4.1 wires
+  real impl. Until then: skip the task and surface "codex backend
+  pending" as BLOCKED in progress.
+- **engine == auggie** → same shape but with `run-auggie.sh`. v0.5.0
+  delivers real impl.
+
+### Step 3c: Agent Teams (claude tasks only)
+
+If `parallel_batch` contains 2+ claude tasks, check Agent Teams:
 ```bash
 echo $CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
 ```
 
-### If output is non-empty (Agent Teams available):
-
-For each task ID in `parallel_batch`, spawn a **teammate** simultaneously in a single message (one Agent tool call per task, all in the same turn).
+#### If output is non-empty (Agent Teams available):
+Spawn all claude `parallel_batch` tasks as **teammates** simultaneously
+in a single message (one Agent tool call per task, all in the same turn).
 Wait for ALL teammates to complete before proceeding.
 
-### If output is empty (Agent Teams NOT available):
+#### If output is empty (Agent Teams NOT available):
+Spawn each claude `parallel_batch` task as a **subagent** sequentially.
+Note: "Agent Teams not available — parallel_batch running sequentially."
 
-For each task ID in `parallel_batch`, spawn a **subagent** sequentially — one task at a time, wait for each to finish.
-Note in output: "Agent Teams not available — parallel_batch running sequentially."
+#### codex / auggie parallelism
+
+When `parallel_batch` includes codex or auggie tasks, spawn each adapter
+script via Bash with `run_in_background: true`, then `wait` in a barrier
+before Phase 4 starts. Agent Teams does not affect non-claude engines.
 
 ### Sequential tasks (all cases):
 
 For each task ID in `sequential_tasks` (in listed order):
-- Spawn one subagent using the prompt template above
+- Branch by engine as above
 - Wait for completion before spawning the next
 
 ---
@@ -236,7 +341,12 @@ Step 5a: Read these files and hold their full text in memory:
 - `{workspace}/sprint-progress-summary.md` → SUMMARY_CONTENT
 - All `{workspace}/sprint-progress/*.md` → PROGRESS_FILES (labelled by task ID)
 
-Step 5b: Spawn a subagent (model: {evaluator_model}) with a prompt assembled from these parts:
+Step 5b: Spawn the Evaluator using `{evaluator_engine}` + `{evaluator_model}`,
+following the same engine-branch logic as Phase 2b (claude → Agent;
+codex/auggie → adapter script with prompt file). Evaluator writes
+`{workspace}/sprint-eval.md`.
+
+Prompt assembled from these parts:
 
 ```
 {EVALUATOR_CONTENT — paste full text}
@@ -359,4 +469,7 @@ Workspace: .sprint/20260427-143022/
 - When retrying, Generators receive both the original `sprint-plan.md` AND the failed `sprint-eval.md` so they know exactly what failed and why
 - `.sprint/` is gitignored — sprint artifacts are local-only by default; do not commit them
 - If spec mentions a target folder (e.g. "build under sprint/foo/"), Planner will overwrite existing files in that folder by default — Interpretation must explicitly state "existing files at <path> will be overwritten; if you intended to keep them, abort and rerun with `do not overwrite existing files in <path>` in the spec"
-- v0.3.0 adds `references/sprint-contract.schema.md` (artifact schema), `references/engine-flag-matrix.md` (CLI flags by backend), and `references/cross-host-deployment.md` (host detection). These are scaffolding for v0.4.x cross-engine generator routing — runtime behaviour of /sprint is unchanged in v0.3.0.
+- v0.3.0 adds `references/sprint-contract.schema.md` (artifact schema), `references/engine-flag-matrix.md` (CLI flags by backend), and `references/cross-host-deployment.md` (host detection). v0.3.1 adds detect-host adapter scripts. v0.4.0 adds schema v2 (engine-namespaced models), `references/model-registry.md`, host-aware presets in init wizard, and cross-engine Phase 2/3/5 dispatch.
+- v0.4.0 still ships codex/auggie adapter scripts as stubs (exit 64). Phase 2/3/5 will surface BLOCKED for non-claude tasks until v0.4.1 (codex) and v0.5.0 (auggie) wire the real implementations. The sprint contract artifacts and config schema are forward-compatible — once adapters land, existing configs work without changes.
+- v0.4.0 wizard always asks for the primary host explicitly (Step 0c), even when detection is confident. This is a deliberate fix from v0.3.x's silent-fallback bug; it costs one extra Enter in the common case but prevents the wizard from writing the wrong-host config in mixed environments.
+- Plan-mode tip is printed by Phase 0 every run. Users running automated sprints can ignore it; users with vague specs should heed it before launching the workspace.
