@@ -1,20 +1,24 @@
 ---
-description: Initialize agent-harness model routing — host-aware wizard for Claude Code / Codex / Auggie
+description: Initialize agent-harness model routing — host-aware wizard for Claude Code / Codex
 allowed-tools: Read, Write, AskUserQuestion, Bash
-argument-hint: "[--detect-only] [--host=claude-code|codex|auggie|multi-host] [--non-interactive]"
+argument-hint: "[--detect-only] [--host=claude-code|codex|multi-host] [--non-interactive]"
 ---
 
 # /agent-harness:init — Configure Model Routing
 
 Walk the user through writing the agent-harness config so `/sprint`
 knows which engine + model to assign to each role (Planner, Evaluator,
-Generator). v0.4.0 makes the wizard host-aware: presets and model
-choices change based on which CLI environment the user is running in.
+Generator). The wizard is host-aware: presets and model choices change
+based on which CLI environment the user is running in.
+
+v0.5.0 dropped Auggie CLI support. Supported hosts are Claude Code
+(first-class) and Codex CLI (generator backend, full host support
+arriving v0.6.0).
 
 Flags:
 - `--detect-only` — run Step 0a/0b and exit (no questions, no writes)
 - `--host=<name>` — explicit host override; skip Step 0c (auto-detect
-  prompt). Valid values: `claude-code`, `codex`, `auggie`, `multi-host`
+  prompt). Valid values: `claude-code`, `codex`, `multi-host`
 - `--non-interactive` — for CI; uses `--host` or detected host without
   prompting. Combine with `--host` to pin behaviour.
 
@@ -23,8 +27,8 @@ Detection contract: `${AGENT_HARNESS_ROOT}/skills/sprint/references/cross-host-d
 Model registry: `${AGENT_HARNESS_ROOT}/skills/sprint/references/model-registry.md`.
 
 > Path token: `${AGENT_HARNESS_ROOT}` and `${CLAUDE_PLUGIN_ROOT}` are
-> aliases under Claude Code v0.4.x. Codex / Auggie hosts substitute
-> `${AGENT_HARNESS_ROOT}` to their own install directory.
+> aliases under Claude Code v0.5.x. The Codex host (v0.6.0 target)
+> will substitute `${AGENT_HARNESS_ROOT}` to its own install directory.
 
 ---
 
@@ -50,8 +54,8 @@ Either script always exits 0. Parse the output into the following keys
 (treat missing keys as `0` / empty for safety):
 
 ```
-claude_installed   codex_installed   auggie_installed
-codex_authed       codex_configured  auggie_authed
+claude_installed   codex_installed
+codex_authed       codex_configured
 running_host       parent_proc       plugin_root       os
 ```
 
@@ -68,9 +72,8 @@ Detected environment:
 
 | CLI          | Installed | Authed | Configured | Running here? |
 |--------------|-----------|--------|------------|---------------|
-| claude-code  | <claude_installed>  | -                  | -                  | <if running_host=claude-code: ✓ else blank> |
-| codex        | <codex_installed>   | <codex_authed>     | <codex_configured> | <if running_host=codex: ✓ else blank>       |
-| auggie       | <auggie_installed>  | <auggie_authed>    | -                  | <if running_host=auggie: ✓ else blank>      |
+| claude-code  | <claude_installed>  | -              | -                  | <if running_host=claude-code: ✓ else blank> |
+| codex        | <codex_installed>   | <codex_authed> | <codex_configured> | <if running_host=codex: ✓ else blank>       |
 
 (✓ = yes, ✗ = no, - = not applicable)
 
@@ -103,7 +106,6 @@ Description: "Which CLI environment will be the *primary* place you run
 Options (preselect = detected running_host; if unknown, no preselect):
 - "Claude Code (claude-code)"  → claude-code
 - "OpenAI Codex CLI (codex)"   → codex
-- "Augment Auggie CLI (auggie)" → auggie
 - "Multiple — I switch often"  → multi-host
 ```
 
@@ -113,20 +115,20 @@ make sense across hosts).
 
 If `running_host=unknown` AND no `--host=` AND user is in
 `--non-interactive` mode → ABORT with:
-> "Cannot determine primary host. Re-run with `--host=<claude-code|codex|auggie|multi-host>`."
+> "Cannot determine primary host. Re-run with `--host=<claude-code|codex|multi-host>`."
 
 ### Step 0d — Confirm secondary deployment targets
 
 For each non-primary host that is **ready** (installed + authed), ask
-whether to deploy entry-point files there too. v0.4.0 ships the prompts
-but actual deployment (writing AGENTS.md, symlinking `.codex/skills/`,
-writing `.augment/rules/`) lands in v0.5.1. v0.4.0 only records the
-user's intent in `cross_tool_deployed.*` config fields.
+whether to deploy entry-point files there too. v0.5.0 ships the prompts
+but actual deployment (writing AGENTS.md, symlinking `.codex/skills/`)
+lands in v0.5.1. v0.5.0 only records the user's intent in
+`cross_tool_deployed.*` config fields.
 
 Skip Step 0d if `--non-interactive` is set or primary host is
 `multi-host` (multi-host implies all-deploys).
 
-For each candidate (codex / auggie if installed and not the primary):
+For codex (if installed and not the primary):
 
 ```
 AskUserQuestion: "Also deploy entry-point files for <CLI>?"
@@ -135,11 +137,26 @@ AskUserQuestion: "Also deploy entry-point files for <CLI>?"
 - Tell me more → print explainer + re-ask
 ```
 
-Then once for AGENTS.md (always offered):
+#### AGENTS.md question — conditional
+
+Only ask the AGENTS.md question when at least ONE of these is true:
+
+- The user said Yes to deploying for `codex` in the previous prompt
+  (Codex CLI auto-loads AGENTS.md, so the file is directly useful)
+- Primary host is `multi-host` (all-tools coverage)
+- The user explicitly passed `--deploy=agents-md`
+
 ```
 AskUserQuestion: "Generate AGENTS.md so any AGENTS.md-aware tool
-(Cursor, Copilot, Windsurf, Amp, Devin) can read sprint procedures?"
+(Cursor, Copilot, Windsurf, Amp, Devin) can also read the sprint
+procedure?"
 ```
+
+If none of those are true (e.g. primary=claude-code with no codex
+deploy), **skip the question entirely** and default
+`cross_tool_deployed.agents_md = false`. Claude Code does not
+auto-load AGENTS.md, so prompting for it without a downstream consumer
+is noise — fixed in v0.7.0 after v0.6.0 user feedback.
 
 ### Step 0e — Final preview & confirmation
 
@@ -164,7 +181,6 @@ Roles:
 
 Cross-tool deployment (v0.5.1 will execute these):
   Codex skills symlink:   <yes/no>
-  Auggie rules:           <yes/no>
   AGENTS.md:              <yes/no>
 
 Confirm?
@@ -187,7 +203,6 @@ Compute the user-level config path from `host` (Step 0c value):
 |--------------|-------------------------------------|
 | claude-code  | `~/.claude/agent-harness.json`       |
 | codex        | `~/.codex/agent-harness.json`        |
-| auggie       | `~/.augment/agent-harness.json`      |
 | multi-host   | `~/.claude/agent-harness.json` (canonical), then mirror to others |
 
 Try Read on the host's config path. If the file exists:
@@ -228,16 +243,6 @@ AskUserQuestion: "Which Codex preset?"
 - Custom — let me pick each role      → custom
 ```
 
-### When host = `auggie`
-
-```
-AskUserQuestion: "Which Auggie preset?"
-- Claude path (Opus/Sonnet/Haiku via Auggie) → auggie-claude
-- Mixed: Claude + GPT-5.4              → auggie-mixed
-- BYOM (bring your own model strings)  → auggie-byom
-- Custom — let me pick each role       → custom
-```
-
 ### When host = `multi-host`
 
 Skip Step 2 — multi-host always uses `custom`.
@@ -247,17 +252,13 @@ table so users can compare visually without reading JSON.
 
 ## Step 3 — Custom (per-role) follow-ups
 
-Skip this step unless preset is `custom` or `auggie-byom`.
+Skip this step unless preset is `custom`.
 
-For `custom`:
-1. Ask Planner engine + model (engine first via 3-option AskUserQuestion;
-   then model from that engine's registry list)
+1. Ask Planner engine + model (engine first via 2-option AskUserQuestion
+   `claude` / `codex`; then model from that engine's registry list)
 2. Ask Evaluator engine + model
 3. Ask Generator default engine + model (applies to code, write, research)
 4. Ask Generator collect engine + model
-
-For `auggie-byom`: same questions but model field is free-text input
-(prompt: "Type your BYOM model string, e.g. claude-3-5-sonnet-20241022").
 
 ## Step 4 — Build & Preview the Config
 
@@ -278,7 +279,6 @@ Primary host:    <host>
 
 Cross-tool deploys (deferred to v0.5.1):
   Codex symlink:  <bool>
-  Auggie rules:   <bool>
   AGENTS.md:      <bool>
 
 Will be written to: <config_path>
@@ -290,7 +290,7 @@ flow.
 
 This table replaces the v0.3.x Step 4 preview that omitted Engine. The
 omission was the root cause of the "what does sonnet mean here?"
-ambiguity reported by Auggie users in v0.3.1.
+ambiguity reported by users in v0.3.1.
 
 ## Step 5 — Write the Config File
 
@@ -318,11 +318,11 @@ After writing, tell the user:
 
 ## Gotchas
 
-- v0.4.0 fixes the v0.3.x silent-fallback bug: `running_host=unknown`
+- v0.4.0 fixed the v0.3.x silent-fallback bug: `running_host=unknown`
   no longer assumes claude-code. It either asks (Step 0c) or aborts
   with a clear `--host=` instruction in `--non-interactive` mode.
 - The detector heuristic uses parent process name, not env vars —
-  Auggie/Codex don't expose runtime env vars yet (verified 2026-04-28).
+  Codex doesn't expose runtime env vars yet (verified 2026-04-28).
   When parent is `node` (common for npx-launched CLIs), `running_host`
   may stay `unknown` and Step 0c will ask.
 - v1→v2 lift requires a known host. If the user has a v1 config AND
@@ -331,13 +331,11 @@ After writing, tell the user:
 - The `mixed-collect` preset writes `engines.codex.available=true` AND
   requires `CODEX_API_KEY` to be set. Phase 0 of `/sprint` will warn
   but still attempt — failure surfaces at first Codex generator spawn.
-- `auggie-byom` does not validate model strings. If Auggie rejects the
-  string, the failure surfaces at first Generator turn.
 - Cross-tool deployment (Step 0d output) is **recorded but not executed**
-  in v0.4.0 — `cross_tool_deployed.*` flags are stored in config so
+  in v0.5.0 — `cross_tool_deployed.*` flags are stored in config so
   v0.5.1 can act on them.
 - Run `mkdir -p` before Write — config directories may not exist on
-  fresh user profiles (especially `~/.codex/` or `~/.augment/`).
+  fresh user profiles (especially `~/.codex/`).
 - The wizard never validates whether the chosen models are actually
   available to the user; if they pick an entitled-only model, `/sprint`
   fails at the relevant subagent spawn with a useful error.

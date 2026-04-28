@@ -1,7 +1,7 @@
 # Engine Flag Matrix
 
 > **Status:** vendor-neutral reference introduced in v0.3.0. Adapter scripts
-> (`adapters/run-codex.sh`, `adapters/run-auggie.sh`) and the `/sprint` Phase 3
+> (`adapters/run-codex.sh`) and the `/sprint` Phase 3
 > generator dispatcher both read from this matrix. Update here first, then the
 > adapters — never hardcode flags inline.
 
@@ -16,21 +16,20 @@ Re-verify when bumping any engine's pinned default model.
 
 ## At-a-glance: Concept → Flag
 
-| Concept                | Claude Code (Agent tool) | Codex CLI (`codex exec`)     | Auggie CLI (`auggie`)            |
-|------------------------|--------------------------|------------------------------|----------------------------------|
-| Select model           | `subagent_type` / `model:` | `--model, -m <name>`         | `--model <name>`                 |
-| Working directory      | inherited from session   | `--cd, -C <path>`            | `--workspace-root <path>`        |
-| Final answer file      | (orchestrator reads result) | `--output-last-message <p>` | `--output-format json` + parse  |
-| JSONL event stream     | n/a                      | `--json`                     | `--output-format json` (single envelope) |
-| Structured schema      | n/a                      | `--output-schema <file>`     | n/a                              |
-| Sandbox                | tool-policy enforced     | `--sandbox read-only \| workspace-write \| danger-full-access` | trust-config (no per-call flag) |
-| Skip approval prompts  | n/a (orchestrator-level) | `--ask-for-approval=never` or `--full-auto` | `--print`           |
-| Don't persist session  | n/a (subagent is ephemeral by definition) | `--ephemeral`                | `--dont-save-session`            |
-| Resume previous run    | (re-spawn subagent)      | `codex exec resume --last`   | `--continue, -c`                 |
-| Cap iterations         | n/a (subagent budget)    | n/a (effort flag)            | `--max-turns <n>`                |
-| Custom rules / context | inline in prompt         | `AGENTS.md` walk             | `--rules <file>`                 |
-| Auth                   | Claude Code session      | `CODEX_API_KEY` (exec only)  | `AUGMENT_SESSION_AUTH` env or `--augment-session-json <path>` |
-| Image input            | embedded in prompt       | (via app-server protocol)    | `--image <file>`                 |
+| Concept                | Claude Code (Agent tool) | Codex CLI (`codex exec`)     |
+|------------------------|--------------------------|------------------------------|
+| Select model           | `subagent_type` / `model:` | `--model, -m <name>`         |
+| Working directory      | inherited from session   | `--cd, -C <path>`            |
+| Final answer file      | (orchestrator reads result) | `--output-last-message <p>` |
+| JSONL event stream     | n/a                      | `--json`                     |
+| Structured schema      | n/a                      | `--output-schema <file>`     |
+| Sandbox                | tool-policy enforced     | `--sandbox read-only \| workspace-write \| danger-full-access` |
+| Skip approval prompts  | n/a (orchestrator-level) | `--ask-for-approval=never` or `--full-auto` |
+| Don't persist session  | n/a (subagent is ephemeral by definition) | `--ephemeral`                |
+| Resume previous run    | (re-spawn subagent)      | `codex exec resume --last`   |
+| Custom rules / context | inline in prompt         | `AGENTS.md` walk             |
+| Auth                   | Claude Code session      | `CODEX_API_KEY` (exec only)  |
+| Image input            | embedded in prompt       | (via app-server protocol)    |
 
 ---
 
@@ -92,71 +91,11 @@ codex exec \
 
 ---
 
-## Auggie CLI — Full Flag Reference
+## Auggie CLI — Removed in v0.5.0
 
-Authoritative source: <https://docs.augmentcode.com/cli/reference.md>,
-<https://docs.augmentcode.com/cli/automation/overview.md>,
-<https://docs.augmentcode.com/cli/rules>.
-
-### Execution Modes
-| Flag | Description |
-|------|-------------|
-| `--print, -p` | Run one instruction without UI, exit. **Required for headless.** |
-| `--ask, -a` | Retrieval / non-editing mode |
-| `--mcp` | Run Auggie itself as an MCP server (out of scope for agent-harness) |
-
-### Output
-| Flag | Description |
-|------|-------------|
-| `--quiet` | Final assistant message only (no step-by-step) |
-| `--compact` | Compact streaming in print mode |
-| `--output-format json` | **JSON envelope** containing final message + tool-call summary. Parsed by `normalize-auggie-output.mjs`. |
-| `--show-credits` | Append credit usage summary |
-
-### Input
-| Flag | Description |
-|------|-------------|
-| `--instruction <text>` | Initial instruction inline |
-| `--instruction-file <path>` | **Cold-start prompt from file — primary mechanism agent-harness uses.** |
-| `--image <file>` | Attach images |
-| `--enhance-prompt` | Run prompt enhancer before sending |
-
-### Configuration
-| Flag | Description |
-|------|-------------|
-| `--model <name>` | Select backend model (Auggie supports Claude, GPT, etc.) |
-| `--max-turns <n>` | **Cap agentic iterations. Required for headless to prevent runaway loops.** Recommended default: 12. |
-| `--rules <file>` | Append additional workspace rules |
-| `--workspace-root <path>` | Workspace root (parallel-task isolation) |
-| `--remove-tool <name>` | Disable a specific tool for this run |
-
-### Session
-| Flag | Description |
-|------|-------------|
-| `--queue` | Queue additional instructions for sequential execution |
-| `--dont-save-session` | **Required for sprint isolation.** |
-| `--continue, -c` | Resume most recent conversation |
-
-### Authentication
-| Method | Notes |
-|--------|-------|
-| `AUGMENT_SESSION_AUTH` env var | Personal session JSON. **User-bound** — does not portable across machines. Obtain via `auggie login` then `auggie token print`. |
-| `--augment-session-json <path>` | Service account credentials. **Required for CI / cross-machine.** Enterprise plan only. |
-| `--github-api-token <path>` or `GITHUB_API_TOKEN` env | GitHub-specific override |
-| `AUGMENT_DISABLE_AUTO_UPDATE=1` | Stop CLI from auto-updating mid-CI-run |
-
-### Required defaults for agent-harness
-```
-auggie \
-  --print --quiet --output-format json \
-  --max-turns 12 --dont-save-session \
-  --workspace-root <workspace>/.work/<task-id> \
-  --model <from-config> \
-  --instruction-file <prompt-file> \
-  > <work-dir>/raw.json
-node normalize-auggie-output.mjs <work-dir>/raw.json \
-  <workspace>/sprint-progress/<task-id>.md
-```
+Auggie support was dropped in v0.5.0. The previous matrix entries are
+preserved in git history if you need to revive them. Configs with
+`engine: "auggie"` are rejected at Phase 0.
 
 ---
 
@@ -172,7 +111,7 @@ relevant orchestrator-level concepts:
 | Context budget | Subagent gets fresh context, ~200k tokens |
 | Output | Returned as tool result string to orchestrator |
 
-**Differences vs Codex/Auggie:**
+**Differences vs Codex:**
 - No working directory flag — Agent inherits the orchestrator's cwd. Sprint
   Phase 3 already cold-starts subagents with explicit instructions about
   which workspace path to use, so this is fine.
@@ -187,10 +126,10 @@ relevant orchestrator-level concepts:
 Claude Code: parallelism via Agent Teams (1 turn = N subagents). Adapters do
 not need to manage parallelism themselves.
 
-Codex / Auggie: each adapter call is a one-shot CLI invocation. Phase 3 spawns
-each in `run_in_background: true` Bash, then `wait`s in a barrier before
-Phase 4 starts. Each task MUST have its own `--cd` / `--workspace-root` to
-avoid collisions on the shared git index.
+Codex: each adapter call is a one-shot CLI invocation. Phase 3 spawns
+each in `run_in_background: true` Bash, then `wait`s in a barrier
+before Phase 4 starts. Each task MUST have its own `--cd` to avoid
+collisions on the shared git index.
 
 ---
 
@@ -200,8 +139,8 @@ When bumping any engine's pinned default model, also re-verify:
 
 - [ ] Flag name still works (e.g. Codex once renamed `--full-auto` semantics)
 - [ ] Auth env var name unchanged
-- [ ] JSON event types in `--json` / `--output-format json` still match the
-      shape `normalize-*-output.mjs` expects
+- [ ] JSON event types in `--json` still match the shape
+      `normalize-codex-output.mjs` expects
 - [ ] Approval / sandbox flag values still cover the headless case
 - [ ] Source of truth URLs above still resolve (Codex docs in particular have
       restructured multiple times)

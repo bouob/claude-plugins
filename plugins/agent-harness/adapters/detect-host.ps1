@@ -1,11 +1,12 @@
-# detect-host.ps1 — Windows counterpart of detect-host.sh (v0.4.0)
+# detect-host.ps1 — Windows counterpart of detect-host.sh (v0.5.0)
 #
 # Output format: one `key=value` line per detected fact, on stdout.
 # Output contract identical to detect-host.sh — see that file's header for
 # the full key list. Exits 0 unconditionally.
 #
-# Tested against Windows PowerShell 5.1 (powershell.exe). PS 5.1 lacks `??`,
-# `?:`, and PSCustomObject -AsHashtable, so we use explicit if-blocks.
+# v0.5.0 dropped Auggie support; auggie_* keys are no longer emitted.
+#
+# Tested against Windows PowerShell 5.1 (powershell.exe).
 
 $ErrorActionPreference = 'SilentlyContinue'
 
@@ -18,15 +19,12 @@ function Has-Command($name) {
 # --- CLI installed ----------------------------------------------------------
 Emit 'claude_installed' (Has-Command 'claude')
 Emit 'codex_installed'  (Has-Command 'codex')
-Emit 'auggie_installed' (Has-Command 'auggie')
 
 # --- Auth / configuration ---------------------------------------------------
 $codexAuthed = if ([string]::IsNullOrEmpty($env:CODEX_API_KEY)) { 0 } else { 1 }
 $codexConfig = if (Test-Path "$env:USERPROFILE\.codex\config.toml") { 1 } else { 0 }
-$auggieAuthed = if ([string]::IsNullOrEmpty($env:AUGMENT_SESSION_AUTH)) { 0 } else { 1 }
 Emit 'codex_authed'     $codexAuthed
 Emit 'codex_configured' $codexConfig
-Emit 'auggie_authed'    $auggieAuthed
 
 # --- Parent process name (host inference heuristic) -------------------------
 $parentProc = 'unknown'
@@ -47,7 +45,6 @@ if (-not [string]::IsNullOrEmpty($env:CLAUDE_PLUGIN_ROOT)) {
     $runningHost = 'claude-code'
 } else {
     if ($parentProc -match 'codex')  { $runningHost = 'codex' }
-    elseif ($parentProc -match 'auggie') { $runningHost = 'auggie' }
     elseif ($parentProc -match 'claude') { $runningHost = 'claude-code' }
 }
 Emit 'running_host' $runningHost

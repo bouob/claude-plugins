@@ -39,10 +39,10 @@ concrete deliverable, clear acceptance) can skip plan mode and run
 
 Inside this skill, `${CLAUDE_PLUGIN_ROOT}` is the active path-substitution
 token under Claude Code. v0.3.0 introduced `${AGENT_HARNESS_ROOT}` as
-the vendor-neutral synonym — when this skill is invoked from Codex or
-Auggie host runtimes (v0.6.0 target), they will substitute
-`${AGENT_HARNESS_ROOT}` to the equivalent install directory. **Under
-Claude Code v0.4.x the two are equivalent; treat them as aliases.**
+the vendor-neutral synonym — when this skill is invoked from the Codex
+host runtime (v0.6.0 target), it will substitute `${AGENT_HARNESS_ROOT}`
+to its install directory. **Under Claude Code v0.5.x the two are
+equivalent; treat them as aliases.**
 
 References (read on demand):
 - `${AGENT_HARNESS_ROOT}/skills/sprint/references/config-schema.md` —
@@ -50,7 +50,7 @@ References (read on demand):
 - `${AGENT_HARNESS_ROOT}/skills/sprint/references/sprint-contract.schema.md` —
   vendor-neutral artifact schema (consumed by all engines)
 - `${AGENT_HARNESS_ROOT}/skills/sprint/references/engine-flag-matrix.md` —
-  CLI flag mapping for Claude Code / Codex / Auggie generator backends
+  CLI flag mapping for Claude Code and Codex generator backends
 - `${AGENT_HARNESS_ROOT}/skills/sprint/references/model-registry.md` —
   valid model IDs per engine (verified per release)
 - `${AGENT_HARNESS_ROOT}/skills/sprint/references/cross-host-deployment.md` —
@@ -106,12 +106,12 @@ The lift only adds structure; model strings are preserved verbatim.
 ### Validate against model-registry
 
 For each `models.*.{engine, model}`:
-- Check `engine` is in `{claude, codex, auggie}` — else ABORT with the
-  specific role / engine name
+- Check `engine` is in `{claude, codex}` — else ABORT with the
+  specific role / engine name. Configs with engine=auggie were valid
+  in v0.4.x; v0.5.0 dropped Auggie support — those configs must be
+  regenerated via `/agent-harness:init`.
 - Check `model` is in the registry list for that engine
   (`${AGENT_HARNESS_ROOT}/skills/sprint/references/model-registry.md`)
-- Unknown model with `engine=auggie` → WARN ("BYOM allowed but not
-  validated"); proceed
 - Unknown model with `engine=claude` or `codex` → ABORT, suggest
   re-running init
 
@@ -133,8 +133,8 @@ For each `models.*.{engine, model}`:
 `{engine: claude, model: sonnet}`. This is conservative — Claude Sonnet
 is available on every subscription tier and most API plans, so `/sprint`
 runs without model-access errors. **Note:** if the host is detected as
-`codex` or `auggie` and there is no config, /sprint cannot use Claude
-defaults — it will print:
+`codex` and there is no config, /sprint cannot use Claude defaults —
+it will print:
 > "Detected host=<host> with no config. Run /agent-harness:init first
 > so /sprint knows which models to route to."
 > and abort cleanly.
@@ -190,17 +190,15 @@ Step 2b: Spawn the Planner using `{planner_engine}` + `{planner_model}`:
 
 - If `{planner_engine}` == `claude` → spawn via the `Agent` tool with
   `model: {planner_model}`.
-- If `{planner_engine}` == `codex` or `auggie` → write the prompt to
+- If `{planner_engine}` == `codex` → write the prompt to
   `{workspace}/.prompts/planner.md` and run via Bash:
-  - codex:  `bash ${AGENT_HARNESS_ROOT}/adapters/run-codex.sh planner {workspace} {planner_model} {workspace}/.prompts/planner.md`
-  - auggie: `bash ${AGENT_HARNESS_ROOT}/adapters/run-auggie.sh planner {workspace} {planner_model} {workspace}/.prompts/planner.md`
-  Each adapter writes the final assistant message to
-  `{workspace}/sprint-plan.md` (auggie via post-processing).
-  Adapters are stubs in v0.4.0 and exit 64; full implementation lands
-  in v0.4.1 (codex) / v0.5.0 (auggie). Until then, on non-claude
-  engines, fall back to a clear error: "Planner engine={engine} not yet
-  runnable; v0.4.0 ships scaffolding only. Use claude planner or wait
-  for v0.4.1+."
+  `bash ${AGENT_HARNESS_ROOT}/adapters/run-codex.sh planner {workspace} {planner_model} {workspace}/.prompts/planner.md`
+  The adapter writes the final assistant message to
+  `{workspace}/sprint-plan.md` via `codex exec --output-last-message`.
+  Adapter is stub in v0.5.0 and exits 64; full implementation lands in
+  v0.5.x. Until then, on engine=codex, fall back to a clear error:
+  "Planner engine=codex not yet runnable; v0.5.0 ships scaffolding only.
+  Use claude planner or wait for v0.5.x."
 
 Prompt assembled from these parts in order:
 
@@ -292,9 +290,6 @@ Step 3b: For each task, branch on `task.engine` (read from sprint-plan.md):
   `codex exec --output-last-message`. v0.4.0 ships stub; v0.4.1 wires
   real impl. Until then: skip the task and surface "codex backend
   pending" as BLOCKED in progress.
-- **engine == auggie** → same shape but with `run-auggie.sh`. v0.5.0
-  delivers real impl.
-
 ### Step 3c: Agent Teams (claude tasks only)
 
 If `parallel_batch` contains 2+ claude tasks, check Agent Teams:
@@ -311,10 +306,10 @@ Wait for ALL teammates to complete before proceeding.
 Spawn each claude `parallel_batch` task as a **subagent** sequentially.
 Note: "Agent Teams not available — parallel_batch running sequentially."
 
-#### codex / auggie parallelism
+#### codex parallelism
 
-When `parallel_batch` includes codex or auggie tasks, spawn each adapter
-script via Bash with `run_in_background: true`, then `wait` in a barrier
+When `parallel_batch` includes codex tasks, spawn each adapter script
+via Bash with `run_in_background: true`, then `wait` in a barrier
 before Phase 4 starts. Agent Teams does not affect non-claude engines.
 
 ### Sequential tasks (all cases):
@@ -343,7 +338,7 @@ Step 5a: Read these files and hold their full text in memory:
 
 Step 5b: Spawn the Evaluator using `{evaluator_engine}` + `{evaluator_model}`,
 following the same engine-branch logic as Phase 2b (claude → Agent;
-codex/auggie → adapter script with prompt file). Evaluator writes
+codex → adapter script with prompt file). Evaluator writes
 `{workspace}/sprint-eval.md`.
 
 Prompt assembled from these parts:
@@ -470,6 +465,7 @@ Workspace: .sprint/20260427-143022/
 - `.sprint/` is gitignored — sprint artifacts are local-only by default; do not commit them
 - If spec mentions a target folder (e.g. "build under sprint/foo/"), Planner will overwrite existing files in that folder by default — Interpretation must explicitly state "existing files at <path> will be overwritten; if you intended to keep them, abort and rerun with `do not overwrite existing files in <path>` in the spec"
 - v0.3.0 adds `references/sprint-contract.schema.md` (artifact schema), `references/engine-flag-matrix.md` (CLI flags by backend), and `references/cross-host-deployment.md` (host detection). v0.3.1 adds detect-host adapter scripts. v0.4.0 adds schema v2 (engine-namespaced models), `references/model-registry.md`, host-aware presets in init wizard, and cross-engine Phase 2/3/5 dispatch.
-- v0.4.0 still ships codex/auggie adapter scripts as stubs (exit 64). Phase 2/3/5 will surface BLOCKED for non-claude tasks until v0.4.1 (codex) and v0.5.0 (auggie) wire the real implementations. The sprint contract artifacts and config schema are forward-compatible — once adapters land, existing configs work without changes.
+- v0.5.0 dropped Auggie support; the engine enum is now `{claude, codex}` only. v0.4.x configs with engine=auggie are rejected at Phase 0 with a "re-run /agent-harness:init" message.
+- v0.5.0 still ships the codex adapter script as a stub (exit 64). Phase 2/3/5 will surface BLOCKED for codex tasks until v0.5.x wires the real `codex exec` implementation. The sprint contract artifacts and config schema are forward-compatible — once the adapter lands, existing configs work without changes.
 - v0.4.0 wizard always asks for the primary host explicitly (Step 0c), even when detection is confident. This is a deliberate fix from v0.3.x's silent-fallback bug; it costs one extra Enter in the common case but prevents the wizard from writing the wrong-host config in mixed environments.
 - Plan-mode tip is printed by Phase 0 every run. Users running automated sprints can ignore it; users with vague specs should heed it before launching the workspace.

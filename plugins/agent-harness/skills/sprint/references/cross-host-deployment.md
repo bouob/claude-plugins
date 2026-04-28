@@ -24,7 +24,7 @@ release that changes its instruction-file discovery rules.
   tasks (sequentially, no Agent Teams).
 - **Deployment target** — a host other than the primary that the user wants
   agent-harness to remain *callable* from. Drives which entry-point files
-  init writes (`AGENTS.md`, `.augment/rules/`, `.codex/skills/` symlink).
+  init writes (`AGENTS.md`, `.codex/skills/` symlink).
 
 ---
 
@@ -34,8 +34,15 @@ release that changes its instruction-file discovery rules.
 |-------------|--------------|------------------------|-----------------|-----------------------------------------------|--------------------|
 | Claude Code | Yes          | Agent Teams            | Yes             | Skill `/sprint` reads SKILL.md                | v0.2.0+ stable     |
 | Codex CLI   | v0.6.0       | Sequential only        | No              | `~/.codex/skills/sprint/SKILL.md` + AGENTS.md | v0.6.0 target      |
-| Auggie CLI  | v0.6.0       | `--queue` sequential   | No              | `.augment/rules/agent-harness.md` + skill      | v0.6.0 target      |
 | IDE (Cursor / Copilot / Windsurf / Amp / Devin) | No (third-class) | Manual            | No              | AGENTS.md (read-only reference)                | v0.5.1 target     |
+
+> **v0.5.0 dropped Auggie CLI support.** Reason: Auggie's main agent
+> ignored `.augment/rules/*.md` constraints when calling MCP tools
+> (e.g. still creating Jira / Confluence docs against deny lists), and
+> the available `toolPermissions` deny mechanism in
+> `~/.augment/settings.json` proved too coarse for sprint-level
+> isolation. Configs with `engine: "auggie"` from v0.4.x are rejected
+> at Phase 0; users must re-run `/agent-harness:init`.
 
 A "first-class" host gets full sprint pipeline support: Planner →
 parallel Generators → Evaluator → 3-iteration retry loop. Anything less is
@@ -47,17 +54,17 @@ documented as a degradation in the table below.
 
 What works, what doesn't, in each host:
 
-| Feature                               | Claude Code | Codex CLI | Auggie CLI | IDE (AGENTS.md) |
-|---------------------------------------|:-----------:|:---------:|:----------:|:---------------:|
-| `/sprint` 6-phase pipeline             | ✓ | ✓ (degraded) | ✓ (degraded) | partial (manual) |
-| Planner subagent isolation             | ✓ | ✓ (sequential) | ✓ (sequential) | — |
-| Parallel Generators                    | ✓ Agent Teams | ✗ sequential | ✗ `--queue` | ✗ |
-| Skeptical Evaluator (separate context) | ✓ | ✓ (new `codex exec`) | ✓ (new `auggie --print`) | partial |
-| PreToolUse hooks (block during sprint) | ✓ | ✗ | ✗ | ✗ |
-| AskUserQuestion (interactive wizard)   | ✓ | ✗ | ✗ | ✗ |
-| Cross-engine generator routing         | ✓ codex/auggie via Bash | partial | partial | ✗ |
-| `--detect-only` env probe              | ✓ | ✓ | ✓ | ✓ |
-| `.sprint/` artifacts produced          | ✓ | ✓ | ✓ | ✓ |
+| Feature                               | Claude Code | Codex CLI | IDE (AGENTS.md) |
+|---------------------------------------|:-----------:|:---------:|:---------------:|
+| `/sprint` 6-phase pipeline             | ✓ | ✓ (degraded) | partial (manual) |
+| Planner subagent isolation             | ✓ | ✓ (sequential) | — |
+| Parallel Generators                    | ✓ Agent Teams | ✗ sequential | ✗ |
+| Skeptical Evaluator (separate context) | ✓ | ✓ (new `codex exec`) | partial |
+| PreToolUse hooks (block during sprint) | ✓ | ✗ | ✗ |
+| AskUserQuestion (interactive wizard)   | ✓ | ✗ | ✗ |
+| Cross-engine generator routing         | ✓ codex via Bash | partial | ✗ |
+| `--detect-only` env probe              | ✓ | ✓ | ✓ |
+| `.sprint/` artifacts produced          | ✓ | ✓ | ✓ |
 
 **Degraded but functional** is acceptable for v0.6.0. The user gets sequential
 Generators and no hook-level safeguards — they are warned of both during
@@ -75,26 +82,24 @@ in the right place per host.
 |-------------|----------------------------------------|-------------------------------|-------|
 | Claude Code | `CLAUDE.md` | Yes | Does NOT auto-load `AGENTS.md` (open feature request as of 2026-03). Use `@AGENTS.md` from CLAUDE.md to bridge. |
 | Codex CLI   | `~/.codex/AGENTS.override.md` → `~/.codex/AGENTS.md` → project-walk `AGENTS.override.md` / `AGENTS.md` / `project_doc_fallback_filenames` | Yes (Git root → cwd, 1 file/dir, 32 KiB cap) | `CLAUDE.md` only loaded if added to `project_doc_fallback_filenames` |
-| Auggie CLI  | `--rules <file>` → `CLAUDE.md` → `AGENTS.md` → `.augment-guidelines` → `.augment/rules/` → `~/.augment/rules/` | Only `CLAUDE.md` / `AGENTS.md` are hierarchical; `.augment/rules/` only at workspace root | Workspace `.augment/rules/` files support `type: always_apply` or `type: agent_requested` frontmatter |
 | Cursor / Copilot / Windsurf / Amp / Devin | `AGENTS.md` | Varies | AGENTS.md is the cross-tool standard |
 
 ### Implications for agent-harness deployment
 
-- **AGENTS.md is the maximum common factor.** Codex requires it; Auggie and
-  Cursor read it; Claude Code can be made to via `@AGENTS.md`. The
-  `templates/AGENTS.md.tpl` (v0.5.1) is the linchpin of cross-host support.
-- **Skills do NOT cross hosts natively.** Codex reads `~/.codex/skills/` and
-  `.codex/skills/`, NOT `.claude/skills/`. Auggie reads `.augment/skills/`,
-  NOT `.claude/skills/`. To make a single SKILL.md available everywhere, init
-  Step 5 deploys symlinks (or copies on Windows non-admin):
+- **AGENTS.md is the maximum common factor.** Codex requires it;
+  Cursor / Copilot / Windsurf / Amp / Devin read it; Claude Code can
+  be made to via `@AGENTS.md`. The `templates/AGENTS.md.tpl` (v0.5.1)
+  is the linchpin of cross-host support.
+- **Skills do NOT cross hosts natively.** Codex reads `~/.codex/skills/`
+  and `.codex/skills/`, NOT `.claude/skills/`. To make a single
+  SKILL.md available everywhere, init Step 5 deploys a symlink (or
+  copy on Windows non-admin):
   - `.codex/skills/sprint` → plugin's `skills/sprint/`
-  - `.augment/skills/sprint` → plugin's `skills/sprint/`
-- **Hooks do NOT cross hosts at all.** PreToolUse / PostToolUse / Stop are
-  Claude Code-only. Codex and Auggie have no equivalent. Cross-host runs
-  rely on:
+- **Hooks do NOT cross hosts at all.** PreToolUse / PostToolUse / Stop
+  are Claude Code-only. Codex has no equivalent. Cross-host runs rely
+  on:
   - Codex `--sandbox workspace-write` to bound damage radius
-  - Auggie `--max-turns 12` to bound runaway iterations
-  - Static reminders embedded in AGENTS.md / `.augment/rules/`
+  - Static reminders embedded in AGENTS.md
 
 ---
 
@@ -106,20 +111,19 @@ The wizard detects three orthogonal facts before asking anything:
 ```
 which claude    → claude_installed=1
 which codex     → codex_installed=1
-which auggie    → auggie_installed=1
 ```
 
 ### Authenticated / configured
 ```
 [ -n "$CODEX_API_KEY" ]                 → codex_authed=1
 [ -f ~/.codex/config.toml ]             → codex_configured=1
-[ -n "$AUGMENT_SESSION_AUTH" ]          → auggie_authed=1
 ```
 
 ### Currently running here
 ```
 [ -n "$CLAUDE_PLUGIN_ROOT" ]            → running_host=claude-code
-# Codex / Auggie equivalent vars: TBD, verify in v0.3.1
+# Codex equivalent vars: not exposed publicly (verified 2026-04-28);
+# fallback to parent_proc heuristic (see detect-host.sh)
 ```
 
 `detect-host.sh` (POSIX) and `detect-host.ps1` (Windows) emit these as
@@ -146,13 +150,6 @@ For each deployment target the user confirms in Step 0d:
   `cp -r` fallback (Windows non-admin) with a `.copy-marker` file noting that
   next plugin update requires re-running init.
 
-### `auggie-rules`
-- Render `templates/auggie-rules.md.tpl` to
-  `<workspace-root>/.augment/rules/agent-harness.md` (frontmatter
-  `type: agent_requested`).
-- If `.augment/rules/agent-harness.md` exists: same append / skip / overwrite
-  prompt as AGENTS.md.
-
 ### `codex-config-patch`
 - Print `templates/codex-config-patch.toml` verbatim with instructions to
   paste into `~/.codex/config.toml`. **Never auto-modify global config files.**
@@ -167,7 +164,6 @@ The wizard writes its primary config to a host-aware path:
 |--------------|--------------------------------------|----------------------------|
 | claude-code  | `~/.claude/agent-harness.json`        | same                       |
 | codex        | `~/.codex/agent-harness.json` (v0.6.0) | same                       |
-| auggie       | `~/.augment/agent-harness.json` (v0.6.0) | same                     |
 | multi-host   | All applicable paths above; same JSON content; first file written wins canonical-path note in others | first existing path |
 
 Per-project overrides remain at `./.claude/agent-harness.local.json` regardless
@@ -184,10 +180,9 @@ deploys, the wizard MUST surface these in the final confirmation:
 1. **Codex 32 KiB AGENTS.md cap** — if rendered template approaches it,
    suggest `project_doc_max_bytes = 65536`.
 2. **Codex doesn't auto-load `.claude/skills/`** — explain symlink rationale.
-3. **Auggie session token is user-bound** — flag CI/multi-machine implications.
-4. **Hooks are Claude Code-only** — sprint runs from Codex / Auggie hosts
+3. **Hooks are Claude Code-only** — sprint runs from the Codex host
    cannot block destructive bash commands the way Claude Code can.
-5. **Sequential degradation** — Codex / Auggie hosts run `parallel_batch`
+4. **Sequential degradation** — the Codex host runs `parallel_batch`
    sequentially; sprint duration scales linearly with task count.
 6. **AGENTS.md merge conflicts** — if user already has an AGENTS.md (e.g.
    company-mandated), init defaults to append-with-markers, never overwrite.
