@@ -20,7 +20,6 @@ fields. Built-in defaults backfill any field that nobody set.
 |--------------|---------------------------------------|----------------------------------------|
 | claude-code  | `~/.claude/agent-harness.json`         | `./.claude/agent-harness.local.json`   |
 | codex        | `~/.codex/agent-harness.json`          | `./.codex/agent-harness.local.json`    |
-| auggie       | `~/.augment/agent-harness.json`        | `./.augment/agent-harness.local.json`  |
 | multi-host   | All applicable user-level paths above (same content); first existing path is canonical | first existing project path |
 
 For each Read attempt, treat ENOENT (file not found) as `{}` — never error on
@@ -41,9 +40,7 @@ guidance), so the override stays out of git by default.
   "engines": {
     "claude": { "available": true },
     "codex":  { "available": false, "auth_env": "CODEX_API_KEY",
-                "default_model": "gpt-5.5" },
-    "auggie": { "available": false, "auth_env": "AUGMENT_SESSION_AUTH",
-                "default_model": "sonnet-4.6" }
+                "default_model": "gpt-5.5" }
   },
   "models": {
     "planner":   { "engine": "claude", "model": "opus" },
@@ -58,7 +55,6 @@ guidance), so the override stays out of git by default.
   "cross_tool_deployed": {
     "agents_md": false,
     "codex_skills_symlink": false,
-    "auggie_rules": false,
     "codex_config_patch_printed": false
   }
 }
@@ -69,18 +65,22 @@ guidance), so the override stays out of git by default.
 | Field | Type | Valid Values | Default (no config) |
 |---|---|---|---|
 | `version` | integer | `2` | `2` |
-| `host` | string | `claude-code` / `codex` / `auggie` / `multi-host` | `claude-code` |
-| `engines.<name>.available` | boolean | true / false | claude=true, others=false |
+| `host` | string | `claude-code` / `codex` / `multi-host` | `claude-code` |
+| `engines.<name>.available` | boolean | true / false | claude=true, codex=false |
 | `engines.<name>.auth_env` | string | env var name to probe | per-engine default |
 | `engines.<name>.default_model` | string | model ID from `model-registry.md` | per-engine default |
-| `models.<role>.engine` | string | `claude` / `codex` / `auggie` | `claude` |
+| `models.<role>.engine` | string | `claude` / `codex` | `claude` |
 | `models.<role>.model` | string | per-engine model ID, see `model-registry.md` | per-engine default |
 | `cross_tool_deployed.<key>` | boolean / string | tracking last init's deployments | all false |
 
 Phase 0 of `/sprint` validates each `models.<role>.engine` is in
-`{claude, codex, auggie}` and each `models.<role>.model` is in the registry
-for that engine. Unknown engine → ABORT. Unknown model with engine=auggie →
-WARN (BYOM allowed). Unknown model with engine=claude/codex → ABORT.
+`{claude, codex}` and each `models.<role>.model` is in the registry
+for that engine. Unknown engine → ABORT. Unknown model → ABORT,
+suggest re-running init.
+
+> **v0.5.0 dropped Auggie support.** Configs from v0.4.x containing
+> `engine: "auggie"` are rejected at Phase 0; users must re-run
+> `/agent-harness:init` to regenerate the config.
 
 **Defaults are conservative on purpose**: with no config file, `/sprint`
 uses Claude Sonnet for every role so the harness works for any subscription
@@ -111,20 +111,11 @@ and shows only presets that make sense in that environment.
 | `codex-budget`  | codex/gpt-5.4 | codex/gpt-5.4 | codex/gpt-5.4-mini | codex/gpt-5.4-mini | codex/gpt-5.4-mini | codex/gpt-5.3-codex-spark | Cost-sensitive |
 | `custom`        | wizard asks per-role | — |
 
-### Host = `auggie`
-
-| Preset | planner | evaluator | gen.code | gen.write | gen.research | gen.collect | Suits |
-|---|---|---|---|---|---|---|---|
-| `auggie-claude` | auggie/opus-4.7   | auggie/sonnet-4.6 | auggie/sonnet-4.6 | auggie/sonnet-4.6 | auggie/sonnet-4.6 | auggie/haiku-4.5 | Claude path through Auggie |
-| `auggie-mixed`  | auggie/sonnet-4.6 | auggie/sonnet-4.6 | auggie/sonnet-4.6 | auggie/sonnet-4.6 | auggie/sonnet-4.6 | auggie/gpt-5.4 | Cross-vendor diversity |
-| `auggie-byom`   | wizard asks per-role with free-text BYOM input | — |
-| `custom`        | wizard asks per-role | — |
-
 ### Host = `multi-host`
 
 Wizard forces `custom` — cross-host configs always need explicit per-role
 decisions. There is no "one-size-fits-all" preset that works for both
-Claude Code spawning and standalone Codex / Auggie execution.
+Claude Code spawning and standalone Codex execution.
 
 ---
 
@@ -192,27 +183,6 @@ Claude Code spawning and standalone Codex / Auggie execution.
 }
 ```
 
-### `auggie-claude` on `auggie`
-```json
-{
-  "version": 2,
-  "host": "auggie",
-  "engines": {
-    "auggie": { "available": true, "auth_env": "AUGMENT_SESSION_AUTH", "default_model": "sonnet-4.6" }
-  },
-  "models": {
-    "planner":   { "engine": "auggie", "model": "opus-4.7" },
-    "evaluator": { "engine": "auggie", "model": "sonnet-4.6" },
-    "generator": {
-      "code":     { "engine": "auggie", "model": "sonnet-4.6" },
-      "write":    { "engine": "auggie", "model": "sonnet-4.6" },
-      "research": { "engine": "auggie", "model": "sonnet-4.6" },
-      "collect":  { "engine": "auggie", "model": "haiku-4.5" }
-    }
-  }
-}
-```
-
 ---
 
 ## Migration: v1 → v2 Auto-Lift
@@ -272,6 +242,5 @@ The Planner receives the routing table at runtime and assigns each
 task's `engine` + `model` fields accordingly when writing
 `sprint-plan.md`.
 
-For backends ≠ claude, Phase 3 dispatches via the adapter scripts
-(`run-codex.sh`, `run-auggie.sh`) instead of the `Agent` tool. The
-adapter contract is documented in `engine-flag-matrix.md`.
+For engine=codex, Phase 3 dispatches via `run-codex.sh` instead of the
+`Agent` tool. The adapter contract is documented in `engine-flag-matrix.md`.

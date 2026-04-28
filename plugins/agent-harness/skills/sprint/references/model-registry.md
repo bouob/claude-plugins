@@ -60,28 +60,15 @@ config surface at the first generator spawn.
 
 ---
 
-## Auggie CLI / Augment Code (engine: `auggie`)
+## Auggie CLI — Removed in v0.5.0
 
-Passed via `auggie --model <id>`. Verified via product page +
-`auggie models list` documentation references (2026-04-28).
-
-| Model ID         | Provider | Use for                                  |
-|------------------|----------|------------------------------------------|
-| `opus-4.7`       | Claude   | Planner (highest quality)                |
-| `sonnet-4.6`     | Claude   | Default — Planner / Generator / Evaluator |
-| `sonnet-4.5`     | Claude   | Previous-gen Sonnet (compatibility)      |
-| `haiku-4.5`      | Claude   | Generator (collect)                      |
-| `gpt-5.4`        | OpenAI   | Cross-vendor diversity                   |
-| `gpt-5.2`        | OpenAI   | Older GPT for specific reasoning bias    |
-| `gemini-3.1-pro` | Google   | Structural thinking / planning           |
-
-**BYOM:** Auggie supports bring-your-own-model via Augment account
-configuration. agent-harness does not validate BYOM strings against this
-registry — Phase 0 emits a warning and proceeds. Use BYOM at your own
-risk; if the underlying provider rejects the request, the Generator task
-will fail at first turn.
-
-To enumerate the live list on the host: `auggie models list`.
+Auggie was supported in v0.4.x. Dropped in v0.5.0 due to insufficient
+controllability of Auggie's main agent (rule files like
+`.augment/rules/*.md` had inconsistent influence on file-creation
+behaviour, and tool-permission deny rules in `~/.augment/settings.json`
+proved too coarse for sprint-level isolation). Configs with
+`engine: "auggie"` are now rejected at Phase 0 — re-run
+`/agent-harness:init` to regenerate.
 
 ---
 
@@ -89,11 +76,11 @@ To enumerate the live list on the host: `auggie models list`.
 
 Roughly comparable tiers across engines, for users picking custom presets:
 
-| Tier                    | Claude         | Codex          | Auggie (Claude path) | Auggie (cross-vendor) |
-|-------------------------|----------------|----------------|----------------------|-----------------------|
-| Top reasoning           | `opus`         | `gpt-5.5`      | `opus-4.7`           | `gemini-3.1-pro`      |
-| Default workhorse       | `sonnet`       | `gpt-5.4`      | `sonnet-4.6`         | `gpt-5.4`             |
-| Cheap / mechanical      | `haiku`        | `gpt-5.3-codex-spark` | `haiku-4.5`   | `gpt-5.2`             |
+| Tier                    | Claude   | Codex                  |
+|-------------------------|----------|------------------------|
+| Top reasoning           | `opus`   | `gpt-5.5`              |
+| Default workhorse       | `sonnet` | `gpt-5.4`              |
+| Cheap / mechanical      | `haiku`  | `gpt-5.3-codex-spark`  |
 
 This is qualitative — benchmark numbers shift per release. Treat the
 table as "comparable enough that swapping won't surprise you" rather
@@ -110,8 +97,6 @@ When a new model lands or an existing one is deprecated:
    `templates/codex-config-patch.toml` if the default model name changed
 3. Update wizard preset model strings in `commands/init.md` Step 4
 4. Bump the verified-on date at the top
-5. If `auggie models list` syntax changed, update the BYOM enumeration
-   note above
-
-Do **not** rename model IDs in old config files — Phase 0 lift handles
-unknown IDs by warning, not by rewriting user data.
+Do **not** rename model IDs in old config files — Phase 0 validation
+rejects unknown IDs with a re-run-init message rather than rewriting
+user data.

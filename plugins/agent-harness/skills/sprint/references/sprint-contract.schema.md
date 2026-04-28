@@ -1,11 +1,11 @@
 # Sprint Contract Schema
 
 > **Status:** vendor-neutral schema introduced in v0.3.0. Three engines (Claude
-> Code, Codex CLI, Auggie CLI) read and write to the same on-disk artifacts.
+> Code, Codex CLI) read and write to the same on-disk artifacts.
 
 This document is the single source of truth for the four files exchanged
 between Planner, Generator, and Evaluator during a `/sprint` run. Any engine
-backend (`{engine: "claude" | "codex" | "auggie"}` in the routing config) MUST
+backend (`{engine: "claude" | "codex"}` in the routing config) MUST
 produce / consume these schemas verbatim.
 
 The contract is versioned: this is **schema v1** of the sprint contract,
@@ -32,13 +32,13 @@ All files for a single sprint run live under one timestamped directory:
 `skills/sprint/SKILL.md`). Sprint artifacts are **local-only by default**;
 do not commit them.
 
-For Codex / Auggie generator backends, an additional `.work/` subtree is
+For the Codex generator backend, an additional `.work/` subtree is
 allocated per task to keep working directories (and git indices) isolated:
 
 ```
 .sprint/<ts>/
 ├── .work/
-│   ├── <task-id-1>/      # cwd for run-codex.sh / run-auggie.sh task 1
+│   ├── <task-id-1>/      # cwd for run-codex.sh task 1
 │   └── <task-id-2>/
 └── .prompts/
     └── <task-id-1>.md    # cold-start prompt rendered by Phase 3
@@ -93,11 +93,10 @@ Tasks with no dependencies — safe to spawn simultaneously.
 
 #### TASK-001
 - **type**: code | write | research | collect
-- **engine**: claude | codex | auggie    # v0.4.0+: required, validated against model-registry.md
+- **engine**: claude | codex    # v0.5.0+: validated against model-registry.md (Auggie removed in v0.5.0)
 - **model**: per-engine model ID — see model-registry.md. Examples:
     - claude → opus | sonnet | haiku
     - codex  → gpt-5.5 | gpt-5.4 | gpt-5.4-mini | gpt-5.3-codex-spark
-    - auggie → opus-4.7 | sonnet-4.6 | haiku-4.5 | gpt-5.4 | gemini-3.1-pro | ...
 - **summary**: <one sentence>
 - **acceptance**: <which AC-N this task satisfies>
 - **deliverables**: <files / decisions / reports the Generator must produce>
@@ -118,7 +117,7 @@ Tasks with dependencies — listed in execution order.
 > Phase 0 of `/sprint` validates `engine` and `model` against
 > `model-registry.md` before Phase 2 spawns the Planner; the Planner is
 > told to assign these per task; Phase 3 dispatches to the appropriate
-> backend (Agent tool for claude, adapter scripts for codex/auggie).
+> backend (Agent tool for claude, run-codex.sh for codex).
 ```
 
 **Required sections:** `Interpretation`, `Acceptance Criteria`, `parallel_batch`,
@@ -162,10 +161,6 @@ manual checks performed>
 For **Codex backend**: `run-codex.sh` writes the assistant's final message via
 `codex exec --output-last-message`, then the Phase 3 orchestrator wraps it in
 this schema (a small post-processing step in `normalize-codex-output.mjs`).
-
-For **Auggie backend**: `run-auggie.sh` captures the JSON envelope via
-`--output-format json`; `normalize-auggie-output.mjs` extracts the final
-assistant message + tool-call summary into this schema.
 
 For **Claude backend**: the Generator subagent writes this file directly per
 its system prompt (current behaviour, unchanged from v0.2.0).
@@ -227,21 +222,21 @@ FAIL — this is the Sprint Contract's defense against Shallow Testing
 Any engine backend MUST honor these regardless of how the underlying CLI
 behaves natively:
 
-1. **Working directory isolation per task.** Codex `--cd`, Auggie
-   `--workspace-root` MUST point to `.sprint/<ts>/.work/<task-id>/` so
-   parallel tasks don't collide on the git index.
-2. **Ephemeral session.** Codex `--ephemeral`, Auggie `--dont-save-session`
-   MUST be set — sprint runs are not part of the user's interactive history.
-3. **No approval prompts.** Codex `--ask-for-approval=never` (or `--full-auto`),
-   Auggie `--print` — headless runs that block on a TTY prompt count as a
-   harness defect, not a model output.
+1. **Working directory isolation per task.** Codex `--cd` MUST point
+   to `.sprint/<ts>/.work/<task-id>/` so parallel tasks don't collide
+   on the git index.
+2. **Ephemeral session.** Codex `--ephemeral` MUST be set — sprint runs
+   are not part of the user's interactive history.
+3. **No approval prompts.** Codex `--ask-for-approval=never` (or
+   `--full-auto`) — headless runs that block on a TTY prompt count as
+   a harness defect, not a model output.
 4. **No commits, no pushes from Generators.** The orchestrator owns git.
    Phase 7 destructive-action gate decides if/when to push. Generator-side
    `git commit` or `git push` is a contract violation.
-5. **Exit code is advisory, file content is authoritative.** Both Codex and
-   Auggie may exit 0 even when the task is incomplete. Always inspect the
-   resulting `sprint-progress/<task-id>.md` for `Status:` before treating a
-   task as done.
+5. **Exit code is advisory, file content is authoritative.** Codex
+   may exit 0 even when the task is incomplete. Always inspect the
+   resulting `sprint-progress/<task-id>.md` for `Status:` before
+   treating a task as done.
 
 ---
 
@@ -260,7 +255,7 @@ extend with new optional fields rather than renaming required ones.
 
 - `engine-flag-matrix.md` — exact CLI flags each backend uses to satisfy the
   invariants above
-- `cross-host-deployment.md` — how the contract surfaces in Codex / Auggie /
+- `cross-host-deployment.md` — how the contract surfaces in Codex /
   IDE host environments
 - `config-schema.md` — `agent-harness.json` schema (model routing config)
 - `../SKILL.md` — Phase definitions that read / write these files
