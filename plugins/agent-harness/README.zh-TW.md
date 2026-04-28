@@ -34,10 +34,10 @@ Wizard 大約 30 秒——詢問你有哪些 Claude 模型權限（Opus / Sonnet
 /sprint 建立一個包含 email/password 和 Google OAuth 的登入頁面
 ```
 
-> **如果你跳過 wizard**，`/sprint` 會用 Opus 預設值（Planner=Opus、Evaluator=Sonnet、
-> Generator=Sonnet、collect=Haiku）。Pro/Team 訂閱或只有 Sonnet 的 API key 會在
-> Phase 2 啟動 Planner 時失敗（因為 harness 會去叫 Opus）。**沒有 Opus 的使用者
-> 請先跑 `/agent-harness:init`**。
+> **如果你跳過 wizard**，`/sprint` 會用全 Sonnet 的安全預設值（每個角色都是 Sonnet），
+> 任何訂閱方案或 API 都能跑、不會撞 model-not-available 錯誤。**有 Opus 權限的人
+> 建議跑 `/agent-harness:init` 選 `All models — Opus, Sonnet, Haiku`**——Opus
+> Planner 的任務拆解品質明顯比 Sonnet 好。
 
 ## Skills
 
@@ -54,9 +54,9 @@ Wizard 大約 30 秒——詢問你有哪些 Claude 模型權限（Opus / Sonnet
 
 ## 設定
 
-預設情況下，`/sprint` 會把 Planner 指派給 Opus，其餘角色給 Sonnet，
-`collect` 類任務給 Haiku。若你想調整——例如沒有 Opus 權限（Pro/Team 訂閱，
-或不含 Opus 的 API key），或想在特定專案壓低成本——可以執行 wizard：
+沒有 config 檔時，`/sprint` 會把**所有角色都用 Sonnet**——這是任何訂閱方案
+與 API 都能跑的安全預設。Wizard 讓你把 Planner 升級為 Opus（有 Opus 權限的使用者）
+或在特定任務壓低成本：
 
 ```bash
 /agent-harness:init
@@ -75,13 +75,13 @@ Schema：`skills/sprint/references/config-schema.md`。
 /sprint 建立一個包含 email/password 和 Google OAuth 的登入頁面
        │
        ├─ Phase 1: 初始化工作區（.sprint/<timestamp>/）
-       ├─ Phase 2: Planner（Opus）→ sprint-plan.md
+       ├─ Phase 2: Planner（依你 config 的模型）→ sprint-plan.md
        │           └─ 任務清單、驗收標準、相依圖
        ├─ Phase 3: Generator（透過 Agent Teams 平行執行）
        │           ├─ 無相依任務 → Agent Teams（同時啟動）
        │           └─ 有相依任務 → 依序 Subagents
        ├─ Phase 4: 彙整進度檔案
-       ├─ Phase 5: Evaluator（Sonnet）→ sprint-eval.md
+       ├─ Phase 5: Evaluator（依你 config 的模型）→ sprint-eval.md
        │           └─ 每條驗收標準的 PASS/FAIL
        └─ Phase 6: 決策閘門
                    ├─ 全部 PASS → 完成，向使用者報告
@@ -90,11 +90,18 @@ Schema：`skills/sprint/references/config-schema.md`。
 
 ## 模型路由
 
-| 任務類型 | 模型 | 原因 |
-|----------|------|------|
+預設路由（無 config 檔）每個角色都用 Sonnet 以求相容性。下面這張是
+**推薦路由**——wizard 的 `full-access` preset 會寫入這套，在有 Opus
+權限時品質最佳：
+
+| 任務類型 | 推薦模型 | 原因 |
+|----------|----------|------|
 | 規劃、評估 | Opus | 複雜推理、架構判斷 |
 | 程式碼、寫作、研究整合 | Sonnet | 品質與速度的平衡 |
 | 資料蒐集、格式轉換 | Haiku | 機械性工作，便宜 15 倍 |
+
+跑 `/agent-harness:init` 套用上表。沒有 Opus 權限的話選 `Sonnet + Haiku`
+或 `Sonnet only`。
 
 ## 需求
 

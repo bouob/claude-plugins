@@ -32,16 +32,58 @@ If the file does not exist, proceed straight to Step 2.
 
 ## Step 2 — Ask Which Models the User Has Access To
 
-Use `AskUserQuestion` to ask:
+Use `AskUserQuestion` to ask: "Which Claude models can you use? (works for
+both Claude.ai subscriptions and direct API access)"
 
-> "Which Claude models can you use? (works for both Claude.ai subscriptions
-> and direct API access)"
+**Use the `preview` field on each option** to show a markdown table of the
+resulting routing — this lets the user compare presets visually without
+reading JSON.
 
-Options (display text → internal preset):
-- `All models — Opus, Sonnet, Haiku` → preset `full-access`
-- `Sonnet + Haiku (no Opus access)` → preset `no-opus`
-- `Sonnet only` → preset `sonnet-only`
-- `Custom — let me pick each role` → preset `custom`
+Options (display text → internal preset → preview content):
+
+### Option 1 — `All models — Opus, Sonnet, Haiku` → `full-access`
+preview:
+```
+| Role                | Model  |
+|---------------------|--------|
+| Planner             | Opus   |
+| Evaluator           | Sonnet |
+| Generator (default) | Sonnet |
+| Generator (collect) | Haiku  |
+```
+
+### Option 2 — `Sonnet + Haiku (no Opus access)` → `no-opus`
+preview:
+```
+| Role                | Model  |
+|---------------------|--------|
+| Planner             | Sonnet |
+| Evaluator           | Sonnet |
+| Generator (default) | Sonnet |
+| Generator (collect) | Haiku  |
+```
+
+### Option 3 — `Sonnet only` → `sonnet-only`
+preview:
+```
+| Role                | Model  |
+|---------------------|--------|
+| Planner             | Sonnet |
+| Evaluator           | Sonnet |
+| Generator (default) | Sonnet |
+| Generator (collect) | Sonnet |
+```
+
+### Option 4 — `Custom — let me pick each role` → `custom`
+preview:
+```
+You'll be asked 4 follow-up questions
+to assign a model for each role:
+- Planner
+- Evaluator
+- Generator (default)
+- Generator (collect)
+```
 
 ## Step 3 — If Preset is `custom`: 4 Follow-Up Questions
 
@@ -69,7 +111,36 @@ Construct the JSON object based on the preset (or custom answers from Step 3).
 | `no-opus` | sonnet | sonnet | sonnet | sonnet | sonnet | haiku |
 | `sonnet-only` | sonnet | sonnet | sonnet | sonnet | sonnet | sonnet |
 
-Wrap the values in this structure:
+### Show the Preview as a Table (User-Friendly)
+
+Print this format to the user — it's clearer than raw JSON:
+
+```
+Selected preset: <preset-name>
+
+| Role                | Model    |
+|---------------------|----------|
+| Planner             | <value>  |
+| Evaluator           | <value>  |
+| Generator (default) | <value>  |
+| Generator (collect) | <value>  |
+
+Will be written to: ~/.claude/agent-harness.json
+```
+
+The "Generator (default)" row collapses `code`, `write`, `research` because
+they always share the same value (set together in Step 3 question 3, or
+identical across all 3 presets).
+
+### Confirm via AskUserQuestion
+
+Use `AskUserQuestion`: "Write this config to ~/.claude/agent-harness.json?"
+Options:
+- `Confirm` → continue to Step 5
+- `Cancel` → stop without writing
+
+Internally the file content is the JSON object below (pretty-printed with
+2-space indent). You don't need to show this to the user unless they ask:
 
 ```json
 {
@@ -86,12 +157,6 @@ Wrap the values in this structure:
   }
 }
 ```
-
-Pretty-print with 2-space indent. Show the result in a fenced code block, then
-use `AskUserQuestion`: "Write this config to ~/.claude/agent-harness.json?"
-Options:
-- `Confirm` → continue to Step 5
-- `Cancel` → stop without writing
 
 ## Step 5 — Write the Config File
 

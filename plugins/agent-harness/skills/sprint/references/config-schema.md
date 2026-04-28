@@ -44,15 +44,22 @@ guidance), so the override stays out of git by default.
 
 ### Field Reference
 
-| Field | Type | Valid Values | Default |
+| Field | Type | Valid Values | Default (no config) |
 |---|---|---|---|
 | `version` | integer | `1` | `1` |
-| `models.planner` | string | `opus` / `sonnet` / `haiku` | `opus` |
+| `models.planner` | string | `opus` / `sonnet` / `haiku` | `sonnet` |
 | `models.evaluator` | string | `opus` / `sonnet` / `haiku` | `sonnet` |
 | `models.generator.code` | string | `opus` / `sonnet` / `haiku` | `sonnet` |
 | `models.generator.write` | string | `opus` / `sonnet` / `haiku` | `sonnet` |
 | `models.generator.research` | string | `opus` / `sonnet` / `haiku` | `sonnet` |
-| `models.generator.collect` | string | `opus` / `sonnet` / `haiku` | `haiku` |
+| `models.generator.collect` | string | `opus` / `sonnet` / `haiku` | `sonnet` |
+
+**Defaults are conservative on purpose**: with no config file, `/sprint` uses
+Sonnet for every role so the harness works for any subscription tier or API
+plan without surprise model-access errors.
+
+**Recommended upgrade for Opus users**: run `/agent-harness:init` and pick the
+`full-access` preset — Planner quality is meaningfully better on Opus.
 
 `haiku` is not recommended for `planner` or `research` — it lacks the synthesis
 capacity. The wizard does not block this combination, but `/sprint` quality
@@ -76,7 +83,7 @@ config — they only drive the values the wizard writes.
 
 ## Example Configs
 
-### `full-access` (default behavior — equivalent to no config file)
+### `full-access` (recommended for users with Opus access — opt-in upgrade)
 ```json
 {
   "version": 1,

@@ -36,11 +36,11 @@ Then run an autonomous sprint:
 /sprint build a login page with email/password and Google OAuth
 ```
 
-> **If you skip the wizard**, `/sprint` falls back to Opus-tier defaults
-> (Planner=Opus, Evaluator=Sonnet, Generator=Sonnet, collect=Haiku). On a
-> Pro/Team subscription or a Sonnet-only API key, the Phase 2 Planner spawn
-> will fail because the harness tries to use Opus. **Run `/agent-harness:init`
-> first** if you don't have Opus.
+> **If you skip the wizard**, `/sprint` uses an all-Sonnet safe default
+> (every role on Sonnet) so it works on any subscription tier or API plan
+> without model-access errors. **For best Planner quality, run
+> `/agent-harness:init` and pick `All models — Opus, Sonnet, Haiku`** — Opus
+> Planner produces meaningfully better task decomposition than Sonnet.
 
 ## Skills
 
@@ -57,10 +57,10 @@ Then run an autonomous sprint:
 
 ## Configuration
 
-By default, `/sprint` uses Opus for the Planner and Sonnet for everything else
-(Haiku for `collect` tasks). Run the wizard to change routing — for example
-if you don't have Opus access (Pro/Team subscription, or an API key without
-Opus), or want to lower cost on a specific project:
+Without a config file, `/sprint` uses **Sonnet for every role** — a safe
+default that works on every subscription tier and API plan. The wizard lets
+you upgrade Planner to Opus (for users with Opus access) or lower cost on
+specific tasks:
 
 ```bash
 /agent-harness:init
@@ -81,13 +81,13 @@ Schema: `skills/sprint/references/config-schema.md`.
 /sprint build a login page with email/password and Google OAuth
        │
        ├─ Phase 1: Initialize workspace (.sprint/<timestamp>/)
-       ├─ Phase 2: Planner (Opus) → sprint-plan.md
+       ├─ Phase 2: Planner (model from your config) → sprint-plan.md
        │           └─ task list, acceptance criteria, dependency graph
        ├─ Phase 3: Generators (parallel via Agent Teams)
        │           ├─ Independent tasks → Agent Teams (simultaneous)
        │           └─ Dependent tasks → sequential subagents
        ├─ Phase 4: Aggregate progress files
-       ├─ Phase 5: Evaluator (Sonnet) → sprint-eval.md
+       ├─ Phase 5: Evaluator (model from your config) → sprint-eval.md
        │           └─ PASS/FAIL per acceptance criterion
        └─ Phase 6: Decision Gate
                    ├─ All PASS → done, report to user
@@ -96,11 +96,18 @@ Schema: `skills/sprint/references/config-schema.md`.
 
 ## Model Routing
 
-| Task Type | Model | Why |
-|-----------|-------|-----|
+Default routing (no config file) uses Sonnet for every role for compatibility.
+The table below is the **recommended routing** the wizard's `full-access`
+preset writes — best quality on Opus access:
+
+| Task Type | Recommended Model | Why |
+|-----------|-------------------|-----|
 | Planning, evaluation | Opus | Complex reasoning, architectural judgment |
 | Code, writing, research | Sonnet | Quality + speed balance |
 | Data collection, format conversion | Haiku | Mechanical tasks, 15× cheaper |
+
+Run `/agent-harness:init` to apply this. Pick `Sonnet + Haiku` or `Sonnet only`
+if you don't have Opus access.
 
 ## Requirements
 
