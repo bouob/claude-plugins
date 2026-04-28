@@ -1,0 +1,17 @@
+{
+  "name": "agent-harness",
+  "owner": {
+    "name": "Victor"
+  },
+  "metadata": {
+    "description": "Multi-agent harness for Claude Code: P-G-E sprints, harness-engineering framework, harness-defect diagnosis.",
+    "version": "0.3.0"
+  },
+  "plugins": [
+    {
+      "name": "agent-harness",
+      "source": "./",
+      "description": "Planner→Generator→Evaluator sprints + harness-engineering meta-skill for design/route/diagnose."
+    }
+  ]
+}
