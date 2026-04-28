@@ -56,13 +56,19 @@ Hold the resolved values in scope as:
   - `research` — synthesizing multiple sources, connecting concepts
   - `collect` — fetching data, format conversion, file discovery
 
-**Built-in defaults**: `planner=opus`, `evaluator=sonnet`,
-`generator.code=sonnet`, `generator.write=sonnet`,
-`generator.research=sonnet`, `generator.collect=haiku`.
+**Built-in defaults (when no config file exists)**: every role uses
+`sonnet`. This is conservative — Sonnet is available on every subscription
+tier and most API plans, so `/sprint` runs without model-access errors.
 
-If `{planner_model}` resolves to `opus` and the user has no Opus access, the
-Phase 2 spawn will fail. Recover by running `/agent-harness:init` and
-selecting an option that excludes Opus (e.g. `Sonnet + Haiku`).
+**Print this hint when running with built-in defaults** (no config file
+found at any layer): "Using safe defaults (all Sonnet). Planner quality is
+better with Opus — run /agent-harness:init to upgrade if you have Opus
+access."
+
+If `{planner_model}` resolves to `opus` (because the user picked `full-access`
+in the wizard) and the user has no Opus access, the Phase 2 spawn will
+fail. Recover by re-running `/agent-harness:init` and selecting a
+non-Opus preset.
 
 ---
 
@@ -318,8 +324,8 @@ Workspace: .sprint/20260427-143022/
 
 ## Gotchas
 
-- Phase 0 reads model config from `~/.claude/agent-harness.json` (user-level) and `./.claude/agent-harness.local.json` (project override). Missing config falls back to v0.1.0 defaults — opus planner, sonnet evaluator, sonnet generator (haiku for collect)
-- Non-Opus users must run `/agent-harness:init` once before first `/sprint`, otherwise Phase 2 spawns an Opus Planner the user has no access to and the spawn fails
+- Phase 0 reads model config from `~/.claude/agent-harness.json` (user-level) and `./.claude/agent-harness.local.json` (project override). Missing config falls back to all-Sonnet — safe across every tier, but Planner quality is better with Opus
+- Users with Opus access should run `/agent-harness:init` and pick `full-access` to upgrade Planner to Opus. Without that, /sprint still works on Sonnet, just with slightly lower planning quality
 - Workspace path is `.sprint/<timestamp>/` — all handoff files live there, not in the project root
 - Phases 2, 3, and 5 embed full file content into each Agent prompt string — cold-start agents cannot read files they were not given; never pass a file path as a substitution for file content
 - Phase 3 generators also receive the full `sprint-plan.md` content in their prompt — they do not need separate Read access to it

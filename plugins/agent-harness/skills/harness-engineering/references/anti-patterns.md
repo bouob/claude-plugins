@@ -67,17 +67,12 @@ runs): the diagnostician uses a derived/proxy data source instead of the primary
 then confidently asserts a conclusion that turns out to be wrong because the proxy
 didn't carry the relevant signal.
 
-**Concrete case (2026-04-27 sprint test session 2a7d68ff)**: Diagnostician was asked
-"did model routing work?" Looked at the orchestrator's main `.jsonl` and saw the last
-assistant message had `model: claude-opus-4-7`. Concluded "all subagents ran Opus —
-routing failed, plugin has a bug, year cost 5–10× higher." The user pushed back; on
-re-check of `subagents/<id>.jsonl` (one file per subagent), each subagent's actual
-`message.model` field showed Haiku 4.5 / Sonnet 4.6 / Opus 4.7 exactly per plan. The
-main `.jsonl` model field is the **orchestrator's** model, not the subagents'.
-
-The Claude Code UI line `Agent(Generator TASK-001) Haiku 4.5` is the source of truth
-for which model a subagent ran on. The diagnostician had this displayed in chat but
-never scrolled back to check it.
+**Common shape** in multi-agent harness diagnosis: someone asks "did model routing
+work?" or "which model ran TASK-X?" The diagnostician checks the orchestrator's main
+session log and finds the orchestrator's model field — then concludes that field
+applies to subagents too. It doesn't. Each spawned subagent has its own per-agent log
+where `message.model` reflects the subagent's actual model. The orchestrator log only
+ever shows the orchestrator's model.
 
 **Signal**: a confident conclusion based on one data source, where a more authoritative
 source was available but not consulted. The conclusion is internally consistent but
@@ -188,4 +183,4 @@ asserting a conclusion:
 - [ ] If the user pushes back, do I re-check sources or argue? **Re-check.** Pushback
       from someone who can see the runtime is evidence, not friction.
 
-See §4a for the canonical case study (2026-04-27 sprint test session 2a7d68ff).
+See §4a for the canonical pattern.
