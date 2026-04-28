@@ -129,55 +129,39 @@ clear acceptance, no architectural decisions). Most models reason more
 carefully in plan mode and will surface clarifying questions before
 committing to a workspace.
 
-## Multi-Host Roadmap
-
-agent-harness is a Claude Code plugin first and foremost. v0.3.0+ lays the
-groundwork for using **Codex CLI (OpenAI)** as an alternative generator
-backend inside Claude Code's `/sprint`, or as a standalone host that
-drives a degraded sprint pipeline. Auggie CLI was supported in v0.4.x
-and removed in v0.5.0 — see Roadmap below.
+## Version History
 
 | Version | Scope | Status |
 |---------|-------|--------|
-| **v0.2.0** | Claude Code only — Planner / Generator / Evaluator all on Claude models | Released |
-| v0.3.0 | Vendor-neutral schemas + adapter / template stubs | Released |
-| v0.3.1 | Host & backend detection (`detect-host.sh`/`.ps1`, `--detect-only`) | Released |
-| v0.4.0 | Host-aware wizard (schema v2 with `engine` namespacing + v1 auto-lift, model registry, host-aware presets for Claude Code / Codex / Auggie / multi-host, parent-process host inference, plan-mode tip in `/sprint`) | Released |
-| **v0.5.0** | **Drop Auggie support** (engine enum reduced to `{claude, codex}`; configs with `engine: "auggie"` rejected at Phase 0). Reason: Auggie's main agent ignored `.augment/rules/*.md` constraints when calling MCP tools, and `toolPermissions` deny rules were too coarse for sprint-level isolation. | **You are here** |
-| v0.5.x | Codex generator backend wired (Bash shell-out via `adapters/run-codex.sh`, `--output-last-message` capture) | Planned |
-| v0.5.y | Cross-tool deployment: render `AGENTS.md`, symlink `.codex/skills/` | Planned |
-| v0.6.0 | Codex CLI as primary host (sequential degradation, AGENTS.md-driven) | Planned |
+| v0.2.0 | Claude Code only — initial release | Released |
+| v0.3.x – v0.5.x | Multi-host experiment (Codex CLI generator backend, Auggie CLI scaffolding, schema v2 with engine namespacing). Reverted in v0.6.0 — see below. | Reverted |
+| **v0.6.0** | **Claude Code-only, simplified.** Schema v3 (plain string models). v0.4.x – v0.5.x configs auto-lift; configs with non-claude engines are rejected with a re-init message. Recommended Workflow + plan-mode tip retained. | **Current** |
 
-Read `skills/sprint/references/cross-host-deployment.md` for the full
-degradation matrix (which features work / are degraded / are unsupported in
-each host).
+### Why the v0.4–v0.5 multi-host track was reverted
 
-Read `skills/sprint/references/engine-flag-matrix.md` for the CLI flag
-mapping each backend uses to satisfy the sprint contract.
+The Codex / Auggie experiments hit two practical blockers that made
+multi-host support more cost than benefit for the agent-harness use
+case:
 
-Read `skills/sprint/references/model-registry.md` for the validated list
-of model IDs each engine accepts (verified per release).
+- **Auggie**: the main agent did not reliably honour `.augment/rules/*.md`
+  constraints when calling MCP tools (e.g. still creating Jira /
+  Confluence docs against deny lists). The `toolPermissions` deny
+  mechanism in `~/.augment/settings.json` was too coarse for
+  sprint-level isolation. Removed in v0.5.0.
+- **Codex**: there is no clean install path for a Claude Code plugin
+  in Codex CLI today. Skills must be hand-copied or symlinked into
+  `~/.agents/skills/` or `~/.codex/skills/`, slash commands like
+  `/agent-harness:init` don't exist in Codex (no namespaced commands),
+  and hooks have to be re-authored for Codex's separate hook system.
+  Maintaining a parallel install / config / hook story for Codex
+  doubled the surface area without delivering proportional value.
+  Removed in v0.6.0.
 
-### Trying v0.5.0 from Codex
-
-v0.4.0+ enables `/agent-harness:init` to run from Claude Code or Codex
-with a host-aware config path:
-
-```bash
-# From Codex CLI
-codex exec --ask-for-approval=never \
-  "Run /agent-harness:init --host=codex"
-```
-
-Note: `/sprint` itself runs end-to-end **only on Claude Code** in
-v0.5.0. The Codex host can configure routing but Phase 2/3/5 will
-surface BLOCKED for codex tasks until the Codex generator backend
-adapter ships in v0.5.x.
-
-The vendor-neutral path token `${AGENT_HARNESS_ROOT}` is introduced in
-v0.3.0 as a synonym for `${CLAUDE_PLUGIN_ROOT}`. Under Claude Code v0.4.x
-they are equivalent; when other host runtimes adopt agent-harness in
-v0.6.0 they will substitute the new token to their own install directory.
+The schema-v2 / `adapters/` / `templates/` scaffolding from those
+versions has been deleted. v0.6.0 keeps only the durable improvements
+that are valuable on Claude Code regardless of the multi-host story:
+the plan-mode workflow recommendation, sprint contract artifacts, and
+the harness-engineering meta-skill.
 
 ## License
 
