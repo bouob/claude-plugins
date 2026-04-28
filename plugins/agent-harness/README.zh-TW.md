@@ -121,52 +121,33 @@ Schema：`skills/sprint/references/config-schema.md`。
 只有當規格已經很具體（單一交付物、驗收清楚、無架構決策）時才跳過第 1 步。
 多數模型在 plan mode 下推理更謹慎、會先提出釐清問題再動工。
 
-## 多 Host 路線圖
-
-agent-harness 主場景仍是 Claude Code plugin。v0.3.0 開始鋪基礎建設，讓
-**Codex CLI（OpenAI）** 能以兩種角色介入：
-(a) 在 Claude Code `/sprint` 裡當特定 Generator 任務的後端引擎；
-(b) 在 v0.6.0 之後成為 standalone host，直接驅動降級版的 sprint 流程。
-
-Auggie CLI 在 v0.4.x 曾被支援，v0.5.0 已移除（理由見下方 Roadmap）。
+## 版本沿革
 
 | 版本 | 範圍 | 狀態 |
 |------|------|------|
-| **v0.2.0** | 純 Claude Code — Planner / Generator / Evaluator 全部用 Claude 模型 | 已發布 |
-| v0.3.0 | vendor-neutral schemas + adapter / template stubs | 已發布 |
-| v0.3.1 | Host 與 backend 偵測（`detect-host.sh`/`.ps1`、`--detect-only`） | 已發布 |
-| v0.4.0 | Host-aware wizard（schema v2 加 `engine` namespace + v1 自動 lift、`model-registry.md`、claude-code / codex / auggie / multi-host 各自 preset、parent process 推斷 host、`--host=` 顯式指定、`/sprint` 加 plan-mode 提示、preview 加 Engine 欄） | 已發布 |
-| **v0.5.0** | **拔除 Auggie 支援**（engine enum 縮為 `{claude, codex}`；含 `engine: "auggie"` 的舊 config 在 Phase 0 被拒絕）。理由：Auggie 主 agent 對 `.augment/rules/*.md` 的限制不一致遵守（會無視 deny rule 仍呼叫 MCP 寫 Jira / Confluence），`toolPermissions` deny 機制粒度過粗，無法做 sprint 等級的隔離。 | **目前版本** |
-| v0.5.x | Codex generator backend 通電（Bash shell-out 透過 `adapters/run-codex.sh`、`--output-last-message` 抓取） | 規劃中 |
-| v0.5.y | 跨工具部署：產生 `AGENTS.md`、symlink `.codex/skills/` | 規劃中 |
-| v0.6.0 | Codex CLI 作為主 host（sequential 降級、AGENTS.md 驅動） | 規劃中 |
+| v0.2.0 | 純 Claude Code — 初版 | 已發布 |
+| v0.3.x – v0.5.x | 多 host 實驗（Codex CLI generator backend、Auggie CLI 鋪設、schema v2 加 engine namespace）。v0.6.0 已撤回，詳見下方 | 已撤回 |
+| **v0.6.0** | **回歸純 Claude Code、簡化版**。Schema v3（純字串 model）。v0.4.x – v0.5.x 的 config 會自動 lift；含非 claude engine 的 config 會被拒絕並提示重跑 init。保留 Recommended Workflow 與 plan-mode 提示。 | **目前版本** |
 
-完整功能在各 host 的可用性矩陣，見 `skills/sprint/references/cross-host-deployment.md`。
+### 為什麼撤回 v0.4–v0.5 多 host 路線
 
-各引擎的 CLI 旗標對照與 sprint contract 滿足條件，見
-`skills/sprint/references/engine-flag-matrix.md`。
+Codex / Auggie 實驗碰到兩個務實阻礙，讓多 host 對 agent-harness
+這個使用情境而言成本大於效益：
 
-各引擎合法 model ID 清單（每個 release 重新驗證），見
-`skills/sprint/references/model-registry.md`。
+- **Auggie**：主 agent 不可靠地遵守 `.augment/rules/*.md` 限制
+  （例如即使 deny rule 寫了不要寫 Jira / Confluence，仍會呼叫 MCP
+  建立文件）。`~/.augment/settings.json` 的 `toolPermissions` deny
+  機制粒度過粗，無法做 sprint 等級的隔離。v0.5.0 移除。
+- **Codex**：目前 Codex CLI 沒有乾淨的 Claude Code plugin 安裝路徑。
+  Skills 必須手動複製或 symlink 到 `~/.agents/skills/` 或
+  `~/.codex/skills/`，namespaced slash command（例如 `/agent-harness:init`）
+  在 Codex 不存在，hooks 也要為 Codex 的獨立 hook 系統重寫一份。
+  維護平行的 install / config / hook 故事讓表面積翻倍，但帶來的
+  價值不成比例。v0.6.0 移除。
 
-### 從 Codex 試 v0.5.0
-
-v0.4.0+ 開始可以從 Claude Code 或 Codex 跑 `/agent-harness:init` 並
-寫入該 host 的 config 路徑：
-
-```bash
-# 從 Codex CLI
-codex exec --ask-for-approval=never \
-  "Run /agent-harness:init --host=codex"
-```
-
-注意：v0.5.0 的 `/sprint` 全流程**只在 Claude Code 跑得通**。Codex
-host 可以配置 routing，但 Phase 2/3/5 在 codex 任務上會回報 BLOCKED
-— 直到 v0.5.x 把 Codex generator backend adapter 通電才會落地。
-
-v0.3.0 新引入 vendor-neutral 路徑 token `${AGENT_HARNESS_ROOT}` 作為
-`${CLAUDE_PLUGIN_ROOT}` 的同義詞。Claude Code v0.4.x 下兩者等價；v0.6.0
-之後其他 host 會把新 token 替換到自己的安裝目錄。
+v0.4.x – v0.5.x 的 schema-v2 / `adapters/` / `templates/` 鷹架已刪除。
+v0.6.0 只保留在純 Claude Code 場景仍有價值的耐久改良：plan-mode
+工作流程建議、sprint contract 工件、harness-engineering meta-skill。
 
 ## 授權
 

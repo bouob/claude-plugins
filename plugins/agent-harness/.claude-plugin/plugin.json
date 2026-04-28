@@ -1,7 +1,7 @@
 {
   "name": "agent-harness",
   "description": "Multi-agent harness for Claude Code: Planner→Generator→Evaluator sprints with parallel Agent Teams, harness-engineering framework for design/diagnosis, and Anthropic 2026-04-04 P-G-E pattern.",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "author": {
     "name": "Victor",
     "url": "https://github.com/bouob"

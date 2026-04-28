@@ -1,216 +1,39 @@
 ---
-description: Initialize agent-harness model routing — host-aware wizard for Claude Code / Codex
+description: Initialize agent-harness model routing for your Claude tier (subscription or API)
 allowed-tools: Read, Write, AskUserQuestion, Bash
-argument-hint: "[--detect-only] [--host=claude-code|codex|multi-host] [--non-interactive]"
+argument-hint: ""
 ---
 
 # /agent-harness:init — Configure Model Routing
 
-Walk the user through writing the agent-harness config so `/sprint`
-knows which engine + model to assign to each role (Planner, Evaluator,
-Generator). The wizard is host-aware: presets and model choices change
-based on which CLI environment the user is running in.
+Walk the user through writing `~/.claude/agent-harness.json` so `/sprint`
+knows which Claude models to assign to each role (Planner, Evaluator,
+Generator). Defaults assume Opus access; this wizard lets users on
+Pro/Team subscriptions, Sonnet-only API keys, or any other access shape
+route around the assumption.
 
-v0.5.0 dropped Auggie CLI support. Supported hosts are Claude Code
-(first-class) and Codex CLI (generator backend, full host support
-arriving v0.6.0).
+> **v0.6.0 simplified back to Claude Code-only.** The v0.4.x – v0.5.x
+> multi-host wizard (Codex / Auggie host options, schema v2 with
+> engine namespacing) was rolled back. v1 / v2 configs auto-lift to
+> v3 plain-model-string format on first read; v2 configs with
+> non-claude engines are rejected with a re-init message.
 
-Flags:
-- `--detect-only` — run Step 0a/0b and exit (no questions, no writes)
-- `--host=<name>` — explicit host override; skip Step 0c (auto-detect
-  prompt). Valid values: `claude-code`, `codex`, `multi-host`
-- `--non-interactive` — for CI; uses `--host` or detected host without
-  prompting. Combine with `--host` to pin behaviour.
-
-Schema reference: `${AGENT_HARNESS_ROOT}/skills/sprint/references/config-schema.md`.
-Detection contract: `${AGENT_HARNESS_ROOT}/skills/sprint/references/cross-host-deployment.md`.
-Model registry: `${AGENT_HARNESS_ROOT}/skills/sprint/references/model-registry.md`.
-
-> Path token: `${AGENT_HARNESS_ROOT}` and `${CLAUDE_PLUGIN_ROOT}` are
-> aliases under Claude Code v0.5.x. The Codex host (v0.6.0 target)
-> will substitute `${AGENT_HARNESS_ROOT}` to its own install directory.
-
----
-
-## Step 0 — Detect Host & Backends
-
-### Step 0a — Run the detector script
-
-Pick the script for the current OS and capture its stdout (each line is
-`key=value`):
-
-```bash
-# POSIX (Linux / macOS / Git Bash on Windows)
-bash "${AGENT_HARNESS_ROOT}/adapters/detect-host.sh"
-```
-
-Or on native Windows PowerShell:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "${AGENT_HARNESS_ROOT}/adapters/detect-host.ps1"
-```
-
-Either script always exits 0. Parse the output into the following keys
-(treat missing keys as `0` / empty for safety):
-
-```
-claude_installed   codex_installed
-codex_authed       codex_configured
-running_host       parent_proc       plugin_root       os
-```
-
-If the detector itself errors (e.g. PowerShell blocked by execution
-policy), fall back to noting "host detection unavailable" and continue
-to Step 0c with `running_host=unknown`.
-
-### Step 0b — Display detection table
-
-Render a markdown table to the user:
-
-```
-Detected environment:
-
-| CLI          | Installed | Authed | Configured | Running here? |
-|--------------|-----------|--------|------------|---------------|
-| claude-code  | <claude_installed>  | -              | -                  | <if running_host=claude-code: ✓ else blank> |
-| codex        | <codex_installed>   | <codex_authed> | <codex_configured> | <if running_host=codex: ✓ else blank>       |
-
-(✓ = yes, ✗ = no, - = not applicable)
-
-Detection summary:
-  parent_proc:    <parent_proc>
-  running_host:   <running_host>
-  ready engines:  <comma-separated CLIs that are installed AND authed>
-```
-
-### Step 0c — Confirm primary host (NEW in v0.4.0)
-
-This is the critical fix from v0.3.x: never silently fall through to
-`claude-code` when host is unknown. Always confirm via question.
-
-#### Skip Step 0c if any of these apply
-
-- `$ARGUMENTS` contains `--host=<value>` → use that value as primary host
-- `$ARGUMENTS` contains `--non-interactive` AND `running_host` is
-  definitive (not unknown) → use `running_host` as primary host
-- `--detect-only` was passed → jump to Step 0e (just print "Detection
-  complete." and exit)
-
-#### Otherwise, ask via AskUserQuestion
-
-```
-Title: "Primary host"
-Description: "Which CLI environment will be the *primary* place you run
-/sprint from? This determines preset choices and config path."
-
-Options (preselect = detected running_host; if unknown, no preselect):
-- "Claude Code (claude-code)"  → claude-code
-- "OpenAI Codex CLI (codex)"   → codex
-- "Multiple — I switch often"  → multi-host
-```
-
-If user picks `multi-host`, the wizard skips presets in Step 2 and
-jumps straight to per-role custom selection in Step 3 (presets don't
-make sense across hosts).
-
-If `running_host=unknown` AND no `--host=` AND user is in
-`--non-interactive` mode → ABORT with:
-> "Cannot determine primary host. Re-run with `--host=<claude-code|codex|multi-host>`."
-
-### Step 0d — Confirm secondary deployment targets
-
-For each non-primary host that is **ready** (installed + authed), ask
-whether to deploy entry-point files there too. v0.5.0 ships the prompts
-but actual deployment (writing AGENTS.md, symlinking `.codex/skills/`)
-lands in v0.5.1. v0.5.0 only records the user's intent in
-`cross_tool_deployed.*` config fields.
-
-Skip Step 0d if `--non-interactive` is set or primary host is
-`multi-host` (multi-host implies all-deploys).
-
-For codex (if installed and not the primary):
-
-```
-AskUserQuestion: "Also deploy entry-point files for <CLI>?"
-- Yes → record cross_tool_deployed flag = true
-- No  → flag = false
-- Tell me more → print explainer + re-ask
-```
-
-#### AGENTS.md question — conditional
-
-Only ask the AGENTS.md question when at least ONE of these is true:
-
-- The user said Yes to deploying for `codex` in the previous prompt
-  (Codex CLI auto-loads AGENTS.md, so the file is directly useful)
-- Primary host is `multi-host` (all-tools coverage)
-- The user explicitly passed `--deploy=agents-md`
-
-```
-AskUserQuestion: "Generate AGENTS.md so any AGENTS.md-aware tool
-(Cursor, Copilot, Windsurf, Amp, Devin) can also read the sprint
-procedure?"
-```
-
-If none of those are true (e.g. primary=claude-code with no codex
-deploy), **skip the question entirely** and default
-`cross_tool_deployed.agents_md = false`. Claude Code does not
-auto-load AGENTS.md, so prompting for it without a downstream consumer
-is noise — fixed in v0.7.0 after v0.6.0 user feedback.
-
-### Step 0e — Final preview & confirmation
-
-Render the full plan as a single block (host + models + deploys) for
-final approval. The user can read the entire thing before any file is
-written.
-
-```
-About to write:
-
-Primary host: <host>
-Config path:  <path-derived-from-host>
-Preset:       <preset name from Step 2 — or "custom" / "deferred to Step 3">
-
-Roles:
-| Role                | Engine | Model       |
-|---------------------|--------|-------------|
-| Planner             | <e>    | <m>         |
-| Evaluator           | <e>    | <m>         |
-| Generator (default) | <e>    | <m>         |
-| Generator (collect) | <e>    | <m>         |
-
-Cross-tool deployment (v0.5.1 will execute these):
-  Codex skills symlink:   <yes/no>
-  AGENTS.md:              <yes/no>
-
-Confirm?
-- Confirm (write config) ← preselected
-- Edit roles → return to Step 3 custom
-- Cancel (no changes)
-```
-
-If user picks Confirm → continue to Step 1 onward.
-If `--non-interactive` and a config preset is fully resolved → skip
-this question and write directly.
+Schema reference: `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/config-schema.md`.
 
 ---
 
 ## Step 1 — Detect Existing Config
 
-Compute the user-level config path from `host` (Step 0c value):
+Try Read on `~/.claude/agent-harness.json`. If the file exists:
 
-| host         | path                                |
-|--------------|-------------------------------------|
-| claude-code  | `~/.claude/agent-harness.json`       |
-| codex        | `~/.codex/agent-harness.json`        |
-| multi-host   | `~/.claude/agent-harness.json` (canonical), then mirror to others |
-
-Try Read on the host's config path. If the file exists:
-
-1. Parse the JSON. If `version` field is missing or `1`, run the
-   v1→v2 lift described in `references/config-schema.md` § Migration.
-2. Show the user the current `models` block as a preview table
-   (Engine | Role | Model — see Step 4 format).
+1. Parse the JSON. If `version` is missing or `1` or `2`, run the
+   auto-lift described in `references/config-schema.md` § Migration.
+   v2 configs whose any `models.<role>.engine != "claude"` ABORT here
+   with:
+   > "v2 config has engine=<engine> for role <role>. v0.6.0 dropped
+   > multi-host support. Reconfigure?"
+   and offer Reconfigure / Cancel.
+2. Show the user the current `models` block in a fenced code block.
 3. Use `AskUserQuestion`: "Existing config found. Reconfigure or keep?"
    - `Reconfigure` → continue to Step 2
    - `Show current and exit` → print the parsed config, stop
@@ -218,132 +41,171 @@ Try Read on the host's config path. If the file exists:
 
 If the file does not exist, proceed straight to Step 2.
 
-## Step 2 — Pick a Preset (host-aware)
+## Step 2 — Ask Which Models the User Has Access To
 
-Choices depend on `host` from Step 0c. Read full preset definitions from
-`references/config-schema.md` § Presets.
+Use `AskUserQuestion` to ask: "Which Claude models can you use? (works
+for both Claude.ai subscriptions and direct API access)"
 
-### When host = `claude-code`
+**Use the `preview` field on each option** to show a markdown table of
+the resulting routing — this lets the user compare presets visually
+without reading JSON.
 
+Options (display text → internal preset → preview content):
+
+### Option 1 — `All models — Opus, Sonnet, Haiku` → `full-access`
+preview:
 ```
-AskUserQuestion: "Which Claude models can you use?"
-- All models — Opus, Sonnet, Haiku    → full-access
-- Sonnet + Haiku (no Opus access)     → no-opus
-- Sonnet only                         → sonnet-only
-- Mixed: Claude + Codex for collect   → mixed-collect (requires CODEX_API_KEY)
-- Custom — let me pick each role      → custom
-```
-
-### When host = `codex`
-
-```
-AskUserQuestion: "Which Codex preset?"
-- gpt-5.5 everywhere (default)        → codex-default
-- Budget: gpt-5.4-mini + spark        → codex-budget
-- Custom — let me pick each role      → custom
+| Role                | Model  |
+|---------------------|--------|
+| Planner             | Opus   |
+| Evaluator           | Sonnet |
+| Generator (default) | Sonnet |
+| Generator (collect) | Haiku  |
 ```
 
-### When host = `multi-host`
+### Option 2 — `Sonnet + Haiku (no Opus access)` → `no-opus`
+preview:
+```
+| Role                | Model  |
+|---------------------|--------|
+| Planner             | Sonnet |
+| Evaluator           | Sonnet |
+| Generator (default) | Sonnet |
+| Generator (collect) | Haiku  |
+```
 
-Skip Step 2 — multi-host always uses `custom`.
+### Option 3 — `Sonnet only` → `sonnet-only`
+preview:
+```
+| Role                | Model  |
+|---------------------|--------|
+| Planner             | Sonnet |
+| Evaluator           | Sonnet |
+| Generator (default) | Sonnet |
+| Generator (collect) | Sonnet |
+```
 
-Each preset's preview field should show a markdown Engine|Role|Model
-table so users can compare visually without reading JSON.
+### Option 4 — `Custom — let me pick each role` → `custom`
+preview:
+```
+You'll be asked 4 follow-up questions
+to assign a model for each role:
+- Planner
+- Evaluator
+- Generator (default)
+- Generator (collect)
+```
 
-## Step 3 — Custom (per-role) follow-ups
+## Step 3 — If Preset is `custom`: 4 Follow-Up Questions
 
-Skip this step unless preset is `custom`.
+Skip this step unless the user picked `custom`. Otherwise ask each in
+order via `AskUserQuestion`. Options for every question are `opus`,
+`sonnet`, `haiku`.
 
-1. Ask Planner engine + model (engine first via 2-option AskUserQuestion
-   `claude` / `codex`; then model from that engine's registry list)
-2. Ask Evaluator engine + model
-3. Ask Generator default engine + model (applies to code, write, research)
-4. Ask Generator collect engine + model
+1. "Which model for the Planner role?" → `models.planner`
+2. "Which model for the Evaluator role?" → `models.evaluator`
+3. "Which model for Generator default tasks (code / write / research)?"
+   → sets `models.generator.code`, `models.generator.write`, and
+   `models.generator.research` to the same value
+4. "Which model for Generator collect tasks (data fetching, transforms)?"
+   → `models.generator.collect`
 
-## Step 4 — Build & Preview the Config
+## Step 4 — Build and Preview the Config
 
-Construct the JSON v2 object based on Step 2 preset (or Step 3 custom
-answers). Show it as a table to the user (Engine column makes the
-ambiguity from v0.3.x impossible):
+Construct the JSON v3 object based on the preset (or custom answers
+from Step 3).
+
+### Preset Mappings
+
+| Preset | planner | evaluator | gen.code | gen.write | gen.research | gen.collect |
+|---|---|---|---|---|---|---|
+| `full-access` | opus | sonnet | sonnet | sonnet | sonnet | haiku |
+| `no-opus` | sonnet | sonnet | sonnet | sonnet | sonnet | haiku |
+| `sonnet-only` | sonnet | sonnet | sonnet | sonnet | sonnet | sonnet |
+
+### Show the Preview as a Table (User-Friendly)
+
+Print this format to the user — clearer than raw JSON:
 
 ```
 Selected preset: <preset-name>
-Primary host:    <host>
 
-| Role                | Engine   | Model         |
-|---------------------|----------|---------------|
-| Planner             | <e>      | <m>           |
-| Evaluator           | <e>      | <m>           |
-| Generator (default) | <e>      | <m>           |
-| Generator (collect) | <e>      | <m>           |
+| Role                | Model    |
+|---------------------|----------|
+| Planner             | <value>  |
+| Evaluator           | <value>  |
+| Generator (default) | <value>  |
+| Generator (collect) | <value>  |
 
-Cross-tool deploys (deferred to v0.5.1):
-  Codex symlink:  <bool>
-  AGENTS.md:      <bool>
-
-Will be written to: <config_path>
+Will be written to: ~/.claude/agent-harness.json
 ```
 
 The "Generator (default)" row collapses `code`, `write`, `research`
-because they share the same value across all presets and the custom
-flow.
+because they always share the same value (set together in Step 3
+question 3, or identical across all 3 presets).
 
-This table replaces the v0.3.x Step 4 preview that omitted Engine. The
-omission was the root cause of the "what does sonnet mean here?"
-ambiguity reported by users in v0.3.1.
+### Confirm via AskUserQuestion
+
+Use `AskUserQuestion`: "Write this config to ~/.claude/agent-harness.json?"
+Options:
+- `Confirm` → continue to Step 5
+- `Cancel` → stop without writing
+
+Internally the file content is the JSON object below (pretty-printed
+with 2-space indent). You don't need to show this to the user unless
+they ask:
+
+```json
+{
+  "version": 3,
+  "models": {
+    "planner": "<value>",
+    "evaluator": "<value>",
+    "generator": {
+      "code": "<value>",
+      "write": "<value>",
+      "research": "<value>",
+      "collect": "<value>"
+    }
+  }
+}
+```
 
 ## Step 5 — Write the Config File
 
 1. Ensure the parent directory exists. Run via Bash:
    ```bash
-   mkdir -p "$(dirname <config_path>)"
+   mkdir -p ~/.claude
    ```
-2. Use the `Write` tool to write the JSON v2 to `<config_path>`.
-   Pretty-print with 2-space indent.
+2. Use the `Write` tool to write the JSON to `~/.claude/agent-harness.json`.
 3. Print confirmation:
-   > "Config written to <config_path>. Run /sprint to use these settings."
+   > "Config written to ~/.claude/agent-harness.json. Run /sprint to use these settings."
 
 ## Step 6 — Mention Project-Level Override
 
 After writing, tell the user:
 
 > "For project-specific overrides, copy this file to
-> `./<host-prefix>/agent-harness.local.json` in your repo
-> (e.g. `./.claude/agent-harness.local.json` for claude-code host).
-> The `.local.json` suffix matches the documented `*.local.json`
-> gitignore pattern, so the override stays out of git by default.
-> `/sprint` reads project first, then user-level, then built-in defaults."
+> `./.claude/agent-harness.local.json` in your repo. The `.local.json`
+> suffix matches the documented `.claude/*.local.json` gitignore
+> pattern, so the override stays out of git by default. `/sprint` reads
+> project first, then user-level, then built-in defaults."
 
 ---
 
 ## Gotchas
 
-- v0.4.0 fixed the v0.3.x silent-fallback bug: `running_host=unknown`
-  no longer assumes claude-code. It either asks (Step 0c) or aborts
-  with a clear `--host=` instruction in `--non-interactive` mode.
-- The detector heuristic uses parent process name, not env vars —
-  Codex doesn't expose runtime env vars yet (verified 2026-04-28).
-  When parent is `node` (common for npx-launched CLIs), `running_host`
-  may stay `unknown` and Step 0c will ask.
-- v1→v2 lift requires a known host. If the user has a v1 config AND
-  detection returns unknown AND no `--host=` flag → abort with
-  instructions to re-run with explicit host.
-- The `mixed-collect` preset writes `engines.codex.available=true` AND
-  requires `CODEX_API_KEY` to be set. Phase 0 of `/sprint` will warn
-  but still attempt — failure surfaces at first Codex generator spawn.
-- Cross-tool deployment (Step 0d output) is **recorded but not executed**
-  in v0.5.0 — `cross_tool_deployed.*` flags are stored in config so
-  v0.5.1 can act on them.
-- Run `mkdir -p` before Write — config directories may not exist on
-  fresh user profiles (especially `~/.codex/`).
+- Run `mkdir -p ~/.claude` before Write — the directory may not exist
+  on a fresh user profile
 - The wizard never validates whether the chosen models are actually
-  available to the user; if they pick an entitled-only model, `/sprint`
-  fails at the relevant subagent spawn with a useful error.
+  available to the user; if they pick a model their access level
+  doesn't include, `/sprint` will fail at the relevant subagent spawn
+  with a useful error
 - Pretty-print JSON with 2-space indent (matches statusline convention)
-  so the file remains hand-editable.
+  so the file remains hand-editable
 - Do not rename the existing config silently if the user picks Cancel;
-  only Step 5 writes the file.
-- `--detect-only` is the only flag that short-circuits before Step 1.
-- The detector emits keys it knows about; future versions will add new
-  keys without removing existing ones — parsers must tolerate unknown
-  keys.
+  only Step 5 writes the file
+- v0.6.0 dropped multi-host support. v2 configs (v0.4.x – v0.5.x) auto-lift
+  by extracting `model` from `{engine: "claude", model: "..."}`. Non-claude
+  engines abort the lift and force re-init — Step 1 handles this gracefully
+  by offering Reconfigure
