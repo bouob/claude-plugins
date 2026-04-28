@@ -10,6 +10,27 @@
   },
   "plugins": [
     {
+      "name": "agent-harness",
+      "source": "./plugins/agent-harness",
+      "description": "Multi-agent harness for Claude Code: Planner→Generator→Evaluator sprints with parallel Agent Teams, harness-engineering framework for design/diagnosis, and Anthropic 2026-04-04 P-G-E pattern.",
+      "keywords": [
+        "multi-agent",
+        "orchestration",
+        "harness",
+        "harness-engineering",
+        "sprint",
+        "planner",
+        "generator",
+        "evaluator",
+        "agent-teams",
+        "autonomous",
+        "p-g-e",
+        "context-engineering",
+        "playwright-mcp"
+      ],
+      "license": "MIT"
+    },
+    {
       "name": "claude-statusline",
       "source": "./plugins/claude-statusline",
       "description": "Zero-dependency statusline for Claude Code with rainbow progress bar, 10 themes, rate limit monitoring, and natural language configuration.",
