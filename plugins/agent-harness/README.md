@@ -115,6 +115,36 @@ if you don't have Opus access.
 - Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) for maximum parallelism
 - Playwright MCP (optional) for live UI verification in the Evaluator phase
 
+## Multi-Host Roadmap
+
+agent-harness is a Claude Code plugin first and foremost. v0.3.0 lays the
+groundwork for using **Codex CLI (OpenAI)** and **Auggie CLI (AugmentCode)**
+either as alternative generator backends inside Claude Code's `/sprint`, or
+as standalone hosts that drive a degraded sprint pipeline themselves.
+
+| Version | Scope | Status |
+|---------|-------|--------|
+| **v0.2.0** | Claude Code only — Planner / Generator / Evaluator all on Claude models | Released |
+| v0.3.0 | Vendor-neutral schemas (`sprint-contract.schema.md`, `engine-flag-matrix.md`, `cross-host-deployment.md`) + adapter / template stubs. Runtime behaviour unchanged. | Released |
+| **v0.3.1** | **Host & backend detection** (`adapters/detect-host.sh` + `.ps1`, `init` Step 0a/0b, `--detect-only` flag) | **You are here** |
+| v0.4.0 | Config schema v2 with `engine` field; v1 auto-lift; full Step 0 wizard interaction | Planned |
+| v0.4.1 | Codex backend for Generator tasks (Bash shell-out via `adapters/run-codex.sh`) | Planned |
+| v0.5.0 | Auggie backend for Generator tasks (`adapters/run-auggie.sh` + JSON envelope normalize) | Planned |
+| v0.5.1 | Cross-tool deployment: render `AGENTS.md`, symlink `.codex/skills/`, write `.augment/rules/agent-harness.md` | Planned |
+| v0.6.0 | Codex CLI / Auggie CLI as primary host (sequential degradation, AGENTS.md-driven) | Planned |
+
+Read `skills/sprint/references/cross-host-deployment.md` for the full
+degradation matrix (which features work / are degraded / are unsupported in
+each host).
+
+Read `skills/sprint/references/engine-flag-matrix.md` for the CLI flag
+mapping each backend uses to satisfy the sprint contract.
+
+The vendor-neutral path token `${AGENT_HARNESS_ROOT}` is introduced in
+v0.3.0 as a synonym for `${CLAUDE_PLUGIN_ROOT}`. Under Claude Code v0.3.x
+they are equivalent; when other host runtimes adopt agent-harness in
+v0.6.0 they will substitute the new token to their own install directory.
+
 ## License
 
 MIT

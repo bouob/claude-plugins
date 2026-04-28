@@ -19,6 +19,29 @@ hooks:
 
 # /sprint — Autonomous Multi-Agent Sprint
 
+## Path Token Convention (v0.3.0+)
+
+Inside this skill, `${CLAUDE_PLUGIN_ROOT}` is the active path-substitution
+token under Claude Code. v0.3.0 also introduces `${AGENT_HARNESS_ROOT}` as
+the vendor-neutral synonym — when this skill is invoked from Codex or Auggie
+host runtimes (v0.6.0 target), they will substitute `${AGENT_HARNESS_ROOT}`
+to the equivalent install directory. **For v0.3.x the two are equivalent
+under Claude Code; treat them as aliases.**
+
+For new references shipped in v0.3.0:
+- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/sprint-contract.schema.md` —
+  vendor-neutral artifact schema (consumed by all engines)
+- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/engine-flag-matrix.md` —
+  CLI flag mapping for Claude Code / Codex / Auggie generator backends
+- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/cross-host-deployment.md` —
+  host detection and degradation matrix
+
+Phases 2–5 will start consuming these references in v0.4.x. v0.3.0 ships
+them as scaffolding; the runtime behaviour of `/sprint` is unchanged from
+v0.2.0.
+
+---
+
 ## Input
 
 ```
@@ -336,3 +359,4 @@ Workspace: .sprint/20260427-143022/
 - When retrying, Generators receive both the original `sprint-plan.md` AND the failed `sprint-eval.md` so they know exactly what failed and why
 - `.sprint/` is gitignored — sprint artifacts are local-only by default; do not commit them
 - If spec mentions a target folder (e.g. "build under sprint/foo/"), Planner will overwrite existing files in that folder by default — Interpretation must explicitly state "existing files at <path> will be overwritten; if you intended to keep them, abort and rerun with `do not overwrite existing files in <path>` in the spec"
+- v0.3.0 adds `references/sprint-contract.schema.md` (artifact schema), `references/engine-flag-matrix.md` (CLI flags by backend), and `references/cross-host-deployment.md` (host detection). These are scaffolding for v0.4.x cross-engine generator routing — runtime behaviour of /sprint is unchanged in v0.3.0.
