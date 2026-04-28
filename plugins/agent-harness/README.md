@@ -115,9 +115,23 @@ if you don't have Opus access.
 - Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) for maximum parallelism
 - Playwright MCP (optional) for live UI verification in the Evaluator phase
 
+## Recommended Workflow
+
+For non-trivial specs:
+
+1. **Enter plan mode first** (Esc → P, or your terminal's plan-mode key) —
+   clarify the spec with the model, surface ambiguities, agree on scope
+2. Exit plan mode and run `/sprint <spec>` — the Planner picks up the
+   sharpened context and produces a tighter `sprint-plan.md`
+
+Skip step 1 only when the spec is already concrete (single deliverable,
+clear acceptance, no architectural decisions). Most models reason more
+carefully in plan mode and will surface clarifying questions before
+committing to a workspace.
+
 ## Multi-Host Roadmap
 
-agent-harness is a Claude Code plugin first and foremost. v0.3.0 lays the
+agent-harness is a Claude Code plugin first and foremost. v0.3.0+ lays the
 groundwork for using **Codex CLI (OpenAI)** and **Auggie CLI (AugmentCode)**
 either as alternative generator backends inside Claude Code's `/sprint`, or
 as standalone hosts that drive a degraded sprint pipeline themselves.
@@ -125,9 +139,9 @@ as standalone hosts that drive a degraded sprint pipeline themselves.
 | Version | Scope | Status |
 |---------|-------|--------|
 | **v0.2.0** | Claude Code only — Planner / Generator / Evaluator all on Claude models | Released |
-| v0.3.0 | Vendor-neutral schemas (`sprint-contract.schema.md`, `engine-flag-matrix.md`, `cross-host-deployment.md`) + adapter / template stubs. Runtime behaviour unchanged. | Released |
-| **v0.3.1** | **Host & backend detection** (`adapters/detect-host.sh` + `.ps1`, `init` Step 0a/0b, `--detect-only` flag) | **You are here** |
-| v0.4.0 | Config schema v2 with `engine` field; v1 auto-lift; full Step 0 wizard interaction | Planned |
+| v0.3.0 | Vendor-neutral schemas + adapter / template stubs | Released |
+| v0.3.1 | Host & backend detection (`detect-host.sh`/`.ps1`, `--detect-only`) | Released |
+| **v0.4.0** | **Host-aware wizard** (Schema v2 with `engine` namespacing + v1 auto-lift, `model-registry.md`, host-aware presets for Claude Code / Codex / Auggie / multi-host, parent-process host inference, `--host=` flag, plan-mode tip in `/sprint`, Engine column in preview) | **You are here** |
 | v0.4.1 | Codex backend for Generator tasks (Bash shell-out via `adapters/run-codex.sh`) | Planned |
 | v0.5.0 | Auggie backend for Generator tasks (`adapters/run-auggie.sh` + JSON envelope normalize) | Planned |
 | v0.5.1 | Cross-tool deployment: render `AGENTS.md`, symlink `.codex/skills/`, write `.augment/rules/agent-harness.md` | Planned |
@@ -140,8 +154,31 @@ each host).
 Read `skills/sprint/references/engine-flag-matrix.md` for the CLI flag
 mapping each backend uses to satisfy the sprint contract.
 
+Read `skills/sprint/references/model-registry.md` for the validated list
+of model IDs each engine accepts (verified per release).
+
+### Trying v0.4.0 from Codex / Auggie
+
+v0.4.0 enables `/agent-harness:init` to run from any host with the
+correct config path written:
+
+```bash
+# From Codex CLI
+codex exec --ask-for-approval=never \
+  "Run /agent-harness:init --host=codex"
+
+# From Auggie CLI
+auggie --print --quiet \
+  "Run /agent-harness:init --host=auggie"
+```
+
+Note: `/sprint` itself runs end-to-end **only on Claude Code** in
+v0.4.0. Codex and Auggie hosts can configure routing but Phase 2/3/5
+will surface BLOCKED for non-claude tasks until v0.4.1 (codex generator
+backend) and v0.5.0 (auggie generator backend) ship.
+
 The vendor-neutral path token `${AGENT_HARNESS_ROOT}` is introduced in
-v0.3.0 as a synonym for `${CLAUDE_PLUGIN_ROOT}`. Under Claude Code v0.3.x
+v0.3.0 as a synonym for `${CLAUDE_PLUGIN_ROOT}`. Under Claude Code v0.4.x
 they are equivalent; when other host runtimes adopt agent-harness in
 v0.6.0 they will substitute the new token to their own install directory.
 

@@ -93,8 +93,11 @@ Tasks with no dependencies — safe to spawn simultaneously.
 
 #### TASK-001
 - **type**: code | write | research | collect
-- **engine**: claude | codex | auggie    # v0.3.0+: declared, not implied
-- **model**: opus | sonnet | haiku | gpt-5.4 | claude-sonnet-4.6 | ...
+- **engine**: claude | codex | auggie    # v0.4.0+: required, validated against model-registry.md
+- **model**: per-engine model ID — see model-registry.md. Examples:
+    - claude → opus | sonnet | haiku
+    - codex  → gpt-5.5 | gpt-5.4 | gpt-5.4-mini | gpt-5.3-codex-spark
+    - auggie → opus-4.7 | sonnet-4.6 | haiku-4.5 | gpt-5.4 | gemini-3.1-pro | ...
 - **summary**: <one sentence>
 - **acceptance**: <which AC-N this task satisfies>
 - **deliverables**: <files / decisions / reports the Generator must produce>
@@ -111,6 +114,11 @@ Tasks with dependencies — listed in execution order.
 - **summary**: ...
 - **acceptance**: ...
 - **deliverables**: ...
+
+> Phase 0 of `/sprint` validates `engine` and `model` against
+> `model-registry.md` before Phase 2 spawns the Planner; the Planner is
+> told to assign these per task; Phase 3 dispatches to the appropriate
+> backend (Agent tool for claude, adapter scripts for codex/auggie).
 ```
 
 **Required sections:** `Interpretation`, `Acceptance Criteria`, `parallel_batch`,
