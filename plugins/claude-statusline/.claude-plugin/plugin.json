@@ -1,6 +1,6 @@
 {
   "name": "claude-statusline",
-  "version": "0.24.0",
+  "version": "0.24.1",
   "description": "Zero-dependency statusline for Claude Code with rainbow progress bar, 10 themes, rate limit monitoring, and natural language configuration.",
   "author": {
     "name": "Victor",
@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/auto-update-path.js"
+            "command": "if command -v node >/dev/null 2>&1; then node ${CLAUDE_PLUGIN_ROOT}/scripts/auto-update-path.js; elif command -v bun >/dev/null 2>&1; then bun ${CLAUDE_PLUGIN_ROOT}/scripts/auto-update-path.js; fi"
           }
         ]
       }
