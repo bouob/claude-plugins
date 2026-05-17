@@ -1,0 +1,17 @@
+{
+  "name": "gbrain-notion-sync",
+  "owner": {
+    "name": "bouob"
+  },
+  "metadata": {
+    "description": "Notion PAI second-brain to gbrain knowledge graph sync pipeline.",
+    "version": "0.1.1"
+  },
+  "plugins": [
+    {
+      "name": "gbrain-notion-sync",
+      "source": "./",
+      "description": "One-way Notion to gbrain sync with Windows Task Scheduler automation and gbrain post-processing hooks."
+    }
+  ]
+}
