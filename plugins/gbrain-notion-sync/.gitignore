@@ -1,7 +1,0 @@
-.env
-sync-state.db
-.conflict/
-dist/
-node_modules/
-*.db-shm
-*.db-wal

@@ -1,7 +1,7 @@
 {
   "name": "gbrain-notion-sync",
   "description": "Sync Notion PAI second-brain (Projects, To-Do, Inbox, Knowledge Base) into local gbrain knowledge graph for fast Claude Code retrieval. Provides /notion-sync slash command with pull / schedule / postprocess / status / doctor sub-commands.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": {
     "name": "bouob",
     "url": "https://github.com/bouob"
