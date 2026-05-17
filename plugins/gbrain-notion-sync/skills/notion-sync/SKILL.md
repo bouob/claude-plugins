@@ -15,6 +15,7 @@ description: >
   tools like notion-update-page), general gbrain queries (use mcp__gbrain__*
   directly), installing gbrain itself (use gbrain CLI per RUNBOOK.md Step 1),
   or pushing local changes back to Notion (not yet implemented — planned for v0.2).
+argument-hint: "[init|setup|pull|schedule|postprocess|status|doctor]"
 allowed_tools:
   - Bash
   - Read
