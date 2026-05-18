@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"./codex/hooks/block-push-during-sprint.ps1\"",
+            "timeout": 30,
+            "statusMessage": "Checking sprint push guard"
+          }
+        ]
+      }
+    ]
+  }
+}

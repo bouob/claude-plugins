@@ -2,9 +2,14 @@
 
 [繁體中文](./README.zh-TW.md)
 
-A [Claude Code plugin](https://docs.anthropic.com/en/docs/claude-code/plugins) for multi-agent orchestration — autonomous Planner→Generator→Evaluator sprints with parallel Agent Teams and iterative feedback loops.
+A dual-host agent workflow package for multi-agent orchestration.
+
+- **Claude Code**: plugin commands for autonomous Planner→Generator→Evaluator sprints with parallel Agent Teams and iterative feedback loops.
+- **Codex**: plugin skills for plan-first sprints with explicit subagent delegation and Codex lifecycle hooks.
 
 ## Install
+
+### Claude Code
 
 ```bash
 # Add marketplace (one-time)
@@ -17,7 +22,22 @@ A [Claude Code plugin](https://docs.anthropic.com/en/docs/claude-code/plugins) f
 claude --plugin-dir ./agent-harness
 ```
 
+### Codex
+
+```bash
+# From the parent directory that contains agent-harness
+codex plugin marketplace add ./agent-harness
+
+# Or, from inside this repository
+codex plugin marketplace add .
+```
+
+Restart Codex, open `/plugins`, choose the `Agent Harness` marketplace, and
+install `agent-harness`. See `docs/codex-install.md` for details.
+
 ## Quick Start
+
+### Claude Code
 
 After install, run the wizard once to set up model routing for the Claude
 models you can actually use:
@@ -42,12 +62,31 @@ Then run an autonomous sprint:
 > `/agent-harness:init` and pick `All models — Opus, Sonnet, Haiku`** — Opus
 > Planner produces meaningfully better task decomposition than Sonnet.
 
+### Codex
+
+Plan first:
+
+```text
+Use agent-harness-sprint-plan to plan this feature before implementation: build a login page with email/password and Google OAuth
+```
+
+Then execute an approved plan:
+
+```text
+Use agent-harness-sprint to run the approved plan. Spawn parallel subagents only for disjoint tasks.
+```
+
+Codex only spawns subagents when explicitly asked. The Codex skill therefore
+names which tasks may run in parallel and which must stay sequential.
+
 ## Skills
 
 | Skill | Usage |
 |-------|-------|
 | `/sprint <spec>` | Autonomous multi-agent sprint: decompose → implement in parallel → evaluate → iterate (fixed 6-phase pipeline, produces `.sprint/<ts>/` artifacts) |
 | `/harness-engineering [task\|question]` | Multi-agent harness framework: plan, execute, design-review, route, or diagnose harness failures (Anthropic 2026-04-04 P-G-E pattern + Harness Defects diagnosis) |
+| `agent-harness-sprint-plan` | Codex skill: read-first sprint planning without implementation |
+| `agent-harness-sprint` | Codex skill: execute an approved sprint with explicit subagent delegation |
 
 ## Commands
 
@@ -77,6 +116,8 @@ Schema: `skills/sprint/references/config-schema.md`.
 
 ## How It Works
 
+### Claude Code
+
 ```
 /sprint build a login page with email/password and Google OAuth
        │
@@ -92,6 +133,24 @@ Schema: `skills/sprint/references/config-schema.md`.
        └─ Phase 6: Decision Gate
                    ├─ All PASS → done, report to user
                    └─ Any FAIL → retry failed tasks (max 3 iterations)
+```
+
+### Codex
+
+```
+agent-harness-sprint-plan <spec>
+       │
+       ├─ Read-only repo exploration
+       ├─ Sprint plan with acceptance criteria and ownership boundaries
+       └─ User-reviewed plan
+
+agent-harness-sprint <approved plan>
+       │
+       ├─ Initialize .sprint/<timestamp>/ artifacts
+       ├─ Delegate disjoint tasks to parallel subagents when explicitly requested
+       ├─ Run shared-file or dependent tasks sequentially
+       ├─ Evaluate acceptance criteria with concrete evidence
+       └─ Summarize changes, verification, and risks
 ```
 
 ## Model Routing
@@ -111,9 +170,17 @@ if you don't have Opus access.
 
 ## Requirements
 
+### Claude Code
+
 - Claude Code on any subscription tier or API plan — model routing is configurable via `/agent-harness:init` (Opus access gives best Planner quality, Sonnet works as a substitute)
 - Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) for maximum parallelism
 - Playwright MCP (optional) for live UI verification in the Evaluator phase
+
+### Codex
+
+- Codex with plugin support
+- Subagent workflows enabled (current Codex releases enable them by default)
+- Plugin hooks enabled if you want the optional sprint push guard
 
 ## Recommended Workflow
 
@@ -135,7 +202,8 @@ committing to a workspace.
 |---------|-------|--------|
 | v0.2.0 | Claude Code only — initial release | Released |
 | v0.3.x – v0.5.x | Multi-host experiment (Codex CLI generator backend, Auggie CLI scaffolding, schema v2 with engine namespacing). Reverted in v0.6.0 — see below. | Reverted |
-| **v0.6.0** | **Claude Code-only, simplified.** Schema v3 (plain string models). v0.4.x – v0.5.x configs auto-lift; configs with non-claude engines are rejected with a re-init message. Recommended Workflow + plan-mode tip retained. | **Current** |
+| v0.6.0 | Claude Code-only, simplified. Schema v3 (plain string models). v0.4.x – v0.5.x configs auto-lift; configs with non-claude engines are rejected with a re-init message. Recommended Workflow + plan-mode tip retained. | Released |
+| **v0.7.0** | **Dual-host package.** Claude Code plugin remains stable; Codex adapter added through `.codex-plugin/`, Codex skills, optional Codex hooks, and local marketplace metadata. | **Current** |
 
 ### Why the v0.4–v0.5 multi-host track was reverted
 
@@ -158,10 +226,14 @@ case:
   Removed in v0.6.0.
 
 The schema-v2 / `adapters/` / `templates/` scaffolding from those
-versions has been deleted. v0.6.0 keeps only the durable improvements
+versions has been deleted. v0.6.0 kept only the durable improvements
 that are valuable on Claude Code regardless of the multi-host story:
 the plan-mode workflow recommendation, sprint contract artifacts, and
 the harness-engineering meta-skill.
+
+v0.7.0 reintroduces Codex support as a separate adapter, not as a mixed
+engine inside the Claude `/sprint` runtime. See
+`docs/claude-code-change-recommendations.md` for Claude-side change notes.
 
 ## License
 
