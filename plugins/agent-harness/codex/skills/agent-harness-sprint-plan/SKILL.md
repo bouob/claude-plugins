@@ -8,7 +8,27 @@ argument-hint: "[product spec or implementation goal]"
 
 Plan a Codex sprint without implementing it. Use this skill for ambiguous or multi-step work where a plan should be reviewed before edits.
 
-## Step 1 - Ground the Plan
+## References
+
+- `../../references/codex-sprint-contract.md` - Codex sprint artifact contract and task rules
+- `../../references/codex-config-schema.md` - Codex model routing config
+
+## Step 1 - Resolve Codex Model Routing
+
+Read Codex config in this order:
+
+1. `./.codex/agent-harness.local.json`
+2. `~/.codex/agent-harness.json`
+3. Built-in defaults from `../../references/codex-config-schema.md`
+
+Only read `.codex` config files. Do not read `.claude/agent-harness*.json`.
+
+If no config exists, use the built-in default where every role has
+`mode: "inherit"`. In generated plans, state that Codex subagents should inherit
+the current Codex session model unless a future config explicitly says
+otherwise.
+
+## Step 2 - Ground the Plan
 
 Read only the files needed to understand the request. Prefer `rg` and targeted file reads.
 
@@ -20,7 +40,7 @@ Identify:
 
 Do not edit files during this skill.
 
-## Step 2 - Write the Sprint Plan
+## Step 3 - Write the Sprint Plan
 
 Produce a plan in the format from `../../references/codex-sprint-contract.md`.
 
@@ -34,13 +54,14 @@ The plan must include:
 
 Use 3 to 7 tasks. A task belongs in `parallel_batch` only when its write ownership is disjoint from every other parallel task. Read-heavy exploration, test analysis, and documentation review may run in parallel.
 
-## Step 3 - Codex Delegation Notes
+## Step 4 - Codex Delegation Notes
 
 Add explicit instructions for future execution:
 - Which tasks should use parallel subagents
 - Which tasks must stay sequential
 - Which files or modules each worker owns
 - Which tasks are read-only
+- Whether each subagent should inherit the current Codex session model
 
 Codex only spawns subagents when the user or skill explicitly asks for parallel delegation. State that execution should use subagents only for the listed parallel tasks.
 

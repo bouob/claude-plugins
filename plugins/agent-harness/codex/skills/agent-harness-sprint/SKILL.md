@@ -11,8 +11,26 @@ Run a Codex-oriented Planner -> Generator -> Evaluator sprint. Use this skill fo
 ## References
 
 - `../../references/codex-sprint-contract.md` - Codex sprint artifact contract and task rules
+- `../../references/codex-config-schema.md` - Codex model routing config
 
-## Step 1 - Planning Gate
+## Step 1 - Resolve Codex Model Routing
+
+Read Codex config in this order:
+
+1. `./.codex/agent-harness.local.json`
+2. `~/.codex/agent-harness.json`
+3. Built-in defaults from `../../references/codex-config-schema.md`
+
+Only read `.codex` config files. Do not read `.claude/agent-harness*.json`.
+
+For v1 config, `mode: "inherit"` means spawned Codex subagents must inherit the
+current Codex session model. When using `spawn_agent`, omit the `model` field
+for roles with `mode: "inherit"`.
+
+If the config has an unknown host, version, or mode, warn the user and fall back
+to inherit-mode routing for this run.
+
+## Step 2 - Planning Gate
 
 If the user provided only a loose spec, first use the planning behavior from `agent-harness-sprint-plan`.
 
@@ -22,7 +40,7 @@ Continue to execution only when the plan has:
 - Ownership boundaries
 - Verification commands or checks
 
-## Step 2 - Initialize Artifacts
+## Step 3 - Initialize Artifacts
 
 Use `.sprint/<YYYYMMDD-HHmmss>/` for local sprint artifacts.
 
@@ -33,19 +51,20 @@ Create:
 
 Keep `.sprint/` local-only. Do not commit sprint artifacts unless the user explicitly asks.
 
-## Step 3 - Execute Generator Tasks
+## Step 4 - Execute Generator Tasks
 
 For `parallel_batch`, spawn subagents only for tasks with disjoint ownership. Tell each subagent:
 - It is not alone in the codebase
 - Its exact files, modules, or responsibility
 - It must not revert edits made by others
 - It must write `.sprint/<timestamp>/sprint-progress/<task-id>.md`
+- It should inherit the current Codex session model when the resolved routing mode is `inherit`
 
 For `sequential_tasks`, run tasks in order. Wait for dependency results before starting the next task.
 
 For shared-file edits, do not run workers in parallel. Keep the main agent or one worker responsible for the shared file.
 
-## Step 4 - Evaluate
+## Step 5 - Evaluate
 
 After implementation, run the verification plan. Use focused commands that prove the acceptance criteria.
 
@@ -56,7 +75,7 @@ Write `.sprint/<timestamp>/sprint-eval.md` with:
 
 If any criterion fails and the retry is small, run one retry pass. If the failure changes scope, stop and report the decision needed.
 
-## Step 5 - Finish
+## Step 6 - Finish
 
 Summarize:
 - What changed

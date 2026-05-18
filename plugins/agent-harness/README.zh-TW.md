@@ -61,16 +61,26 @@ Wizard 大約 30 秒——詢問你有哪些 Claude 模型權限（Opus / Sonnet
 
 ### Codex
 
+初始化 Codex 專用模型路由：
+
+```text
+$agent-harness:agent-harness-init
+```
+
+Codex 預設路由會讓 Planner、Evaluator、Generator subagents 繼承目前
+Codex session 的模型。它不會讀寫 Claude Code 的 `.claude/agent-harness*.json`
+檔案。
+
 先規劃：
 
 ```text
-Use agent-harness-sprint-plan to plan this feature before implementation: 建立一個包含 email/password 和 Google OAuth 的登入頁面
+$agent-harness:agent-harness-sprint-plan 建立一個包含 email/password 和 Google OAuth 的登入頁面
 ```
 
 再執行已確認的計畫：
 
 ```text
-Use agent-harness-sprint to run the approved plan. Spawn parallel subagents only for disjoint tasks.
+$agent-harness:agent-harness-sprint 執行已確認的計畫。只在 ownership 不重疊時啟動平行 subagents。
 ```
 
 Codex 只有在明確要求時才會啟動 subagents，所以 Codex skill 會明確標出哪些任務可平行、哪些任務必須依序處理。
@@ -81,6 +91,7 @@ Codex 只有在明確要求時才會啟動 subagents，所以 Codex skill 會明
 |-------|------|
 | `/sprint <spec>` | 自主多代理人 Sprint：分解 → 平行實作 → 評估 → 迭代（固定 6 階段流程，產出 `.sprint/<ts>/` 工作區）|
 | `/harness-engineering [任務\|問題]` | 多代理人 harness 框架：規劃、執行、設計審查、模型路由、診斷 harness 失敗（Anthropic 2026-04-04 P-G-E pattern + Harness Defects 診斷）|
+| `agent-harness-init` | Codex skill：初始化 `.codex` 或 `~/.codex` 下的 Codex 專用模型路由 |
 | `agent-harness-sprint-plan` | Codex skill：只讀探索與 Sprint 規劃，不實作 |
 | `agent-harness-sprint` | Codex skill：依已確認的計畫執行，並明確委派 subagents |
 
@@ -91,6 +102,8 @@ Codex 只有在明確要求時才會啟動 subagents，所以 Codex skill 會明
 | `/agent-harness:init` | 互動式 wizard，詢問你能使用哪些 Claude 模型，並寫入 `~/.claude/agent-harness.json`，讓 `/sprint` 知道如何把 Planner / Evaluator / Generator 路由到你有權限的模型 |
 
 ## 設定
+
+### Claude Code
 
 沒有 config 檔時，`/sprint` 會把**所有角色都用 Sonnet**——這是任何訂閱方案
 與 API 都能跑的安全預設。Wizard 讓你把 Planner 升級為 Opus（有 Opus 權限的使用者）
@@ -106,6 +119,23 @@ Wizard 會詢問你能使用哪些 Claude 模型（同時支援 Claude.ai 訂閱
 `.claude/*.local.json` gitignore 慣例，預設不會被 commit。
 
 Schema：`skills/sprint/references/config-schema.md`。
+
+### Codex
+
+Codex 使用自己的設定檔，不會讀取 Claude Code 的模型路由：
+
+- 專案覆寫：`./.codex/agent-harness.local.json`
+- 使用者預設：`~/.codex/agent-harness.json`
+
+用這個 skill 初始化：
+
+```text
+$agent-harness:agent-harness-init
+```
+
+Codex v1 schema 預設所有角色都是 `mode: "inherit"`，所以啟動的 subagents
+會沿用目前 Codex session 的模型與 reasoning 設定。Schema：
+`codex/references/codex-config-schema.md`。
 
 ## 運作方式
 
@@ -131,13 +161,18 @@ Schema：`skills/sprint/references/config-schema.md`。
 ### Codex
 
 ```
-agent-harness-sprint-plan <spec>
+$agent-harness:agent-harness-init
+       │
+       ├─ 寫入 `.codex` 或 `~/.codex` 下的 Codex 專用設定
+       └─ 所有角色繼承目前 Codex session 模型
+
+$agent-harness:agent-harness-sprint-plan <spec>
        │
        ├─ 只讀探索 repo
        ├─ 產生含驗收標準與 ownership 邊界的 Sprint 計畫
        └─ 交給使用者確認
 
-agent-harness-sprint <approved plan>
+$agent-harness:agent-harness-sprint <approved plan>
        │
        ├─ 初始化 .sprint/<timestamp>/ artifacts
        ├─ 明確要求時，將 disjoint tasks 委派給平行 subagents
@@ -147,6 +182,8 @@ agent-harness-sprint <approved plan>
 ```
 
 ## 模型路由
+
+### Claude Code
 
 預設路由（無 config 檔）每個角色都用 Sonnet 以求相容性。下面這張是
 **推薦路由**——wizard 的 `full-access` preset 會寫入這套，在有 Opus
@@ -160,6 +197,12 @@ agent-harness-sprint <approved plan>
 
 跑 `/agent-harness:init` 套用上表。沒有 Opus 權限的話選 `Sonnet + Haiku`
 或 `Sonnet only`。
+
+### Codex
+
+Codex 路由預設每個角色都是 `mode: "inherit"`。編排器啟動
+subagents 時不傳入模型覆寫，因此它們會繼承目前 Codex session 的模型與
+reasoning 設定。執行 `$agent-harness:agent-harness-init` 可寫入 Codex 專用設定。
 
 ## 需求
 
