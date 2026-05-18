@@ -64,16 +64,26 @@ Then run an autonomous sprint:
 
 ### Codex
 
+Initialize Codex-only model routing:
+
+```text
+$agent-harness:agent-harness-init
+```
+
+The default Codex routing inherits the current Codex session model for Planner,
+Evaluator, and Generator subagents. It does not read or write Claude Code's
+`.claude/agent-harness*.json` files.
+
 Plan first:
 
 ```text
-Use agent-harness-sprint-plan to plan this feature before implementation: build a login page with email/password and Google OAuth
+$agent-harness:agent-harness-sprint-plan build a login page with email/password and Google OAuth
 ```
 
 Then execute an approved plan:
 
 ```text
-Use agent-harness-sprint to run the approved plan. Spawn parallel subagents only for disjoint tasks.
+$agent-harness:agent-harness-sprint run the approved plan. Spawn parallel subagents only for disjoint tasks.
 ```
 
 Codex only spawns subagents when explicitly asked. The Codex skill therefore
@@ -85,6 +95,7 @@ names which tasks may run in parallel and which must stay sequential.
 |-------|-------|
 | `/sprint <spec>` | Autonomous multi-agent sprint: decompose → implement in parallel → evaluate → iterate (fixed 6-phase pipeline, produces `.sprint/<ts>/` artifacts) |
 | `/harness-engineering [task\|question]` | Multi-agent harness framework: plan, execute, design-review, route, or diagnose harness failures (Anthropic 2026-04-04 P-G-E pattern + Harness Defects diagnosis) |
+| `agent-harness-init` | Codex skill: initialize Codex-only model routing under `.codex` or `~/.codex` |
 | `agent-harness-sprint-plan` | Codex skill: read-first sprint planning without implementation |
 | `agent-harness-sprint` | Codex skill: execute an approved sprint with explicit subagent delegation |
 
@@ -95,6 +106,8 @@ names which tasks may run in parallel and which must stay sequential.
 | `/agent-harness:init` | Interactive wizard that asks which Claude models you can use and writes `~/.claude/agent-harness.json` so `/sprint` knows how to route Planner / Evaluator / Generator across the models you have access to |
 
 ## Configuration
+
+### Claude Code
 
 Without a config file, `/sprint` uses **Sonnet for every role** — a safe
 default that works on every subscription tier and API plan. The wizard lets
@@ -113,6 +126,23 @@ matches the documented `.claude/*.local.json` gitignore pattern, so the
 override stays out of git by default.
 
 Schema: `skills/sprint/references/config-schema.md`.
+
+### Codex
+
+Codex uses its own config files and never reads Claude Code model routing:
+
+- Project override: `./.codex/agent-harness.local.json`
+- User default: `~/.codex/agent-harness.json`
+
+Initialize them with:
+
+```text
+$agent-harness:agent-harness-init
+```
+
+The v1 Codex schema defaults every role to `mode: "inherit"`, so spawned
+subagents use the current Codex session model and reasoning settings. Schema:
+`codex/references/codex-config-schema.md`.
 
 ## How It Works
 
@@ -138,13 +168,18 @@ Schema: `skills/sprint/references/config-schema.md`.
 ### Codex
 
 ```
-agent-harness-sprint-plan <spec>
+$agent-harness:agent-harness-init
+       │
+       ├─ Write Codex-only config under .codex or ~/.codex
+       └─ All roles inherit the current Codex session model
+
+$agent-harness:agent-harness-sprint-plan <spec>
        │
        ├─ Read-only repo exploration
        ├─ Sprint plan with acceptance criteria and ownership boundaries
        └─ User-reviewed plan
 
-agent-harness-sprint <approved plan>
+$agent-harness:agent-harness-sprint <approved plan>
        │
        ├─ Initialize .sprint/<timestamp>/ artifacts
        ├─ Delegate disjoint tasks to parallel subagents when explicitly requested
@@ -154,6 +189,8 @@ agent-harness-sprint <approved plan>
 ```
 
 ## Model Routing
+
+### Claude Code
 
 Default routing (no config file) uses Sonnet for every role for compatibility.
 The table below is the **recommended routing** the wizard's `full-access`
@@ -167,6 +204,13 @@ preset writes — best quality on Opus access:
 
 Run `/agent-harness:init` to apply this. Pick `Sonnet + Haiku` or `Sonnet only`
 if you don't have Opus access.
+
+### Codex
+
+Codex routing defaults to `mode: "inherit"` for every role. The orchestrator
+does not pass model overrides when spawning subagents, so they inherit the
+current Codex session model and reasoning settings. Run
+`$agent-harness:agent-harness-init` to write the Codex-only config.
 
 ## Requirements
 
@@ -203,7 +247,7 @@ committing to a workspace.
 | v0.2.0 | Claude Code only — initial release | Released |
 | v0.3.x – v0.5.x | Multi-host experiment (Codex CLI generator backend, Auggie CLI scaffolding, schema v2 with engine namespacing). Reverted in v0.6.0 — see below. | Reverted |
 | v0.6.0 | Claude Code-only, simplified. Schema v3 (plain string models). v0.4.x – v0.5.x configs auto-lift; configs with non-claude engines are rejected with a re-init message. Recommended Workflow + plan-mode tip retained. | Released |
-| **v0.7.0** | **Dual-host package.** Claude Code plugin remains stable; Codex adapter added through `.codex-plugin/`, Codex skills, optional Codex hooks, and local marketplace metadata. | **Current** |
+| **v0.7.0** (released publicly as **v2.1.0**) | **Dual-host package.** Claude Code plugin remains stable; Codex adapter added through `.codex-plugin/`, Codex skills, optional Codex hooks, and local marketplace metadata. | **Current** |
 
 ### Why the v0.4–v0.5 multi-host track was reverted
 

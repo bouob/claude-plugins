@@ -1,6 +1,6 @@
 {
   "name": "agent-harness",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Multi-agent sprint harness for Codex: plan-first Planner/Generator/Evaluator workflows with explicit subagent delegation.",
   "author": {
     "name": "Victor",
@@ -33,6 +33,7 @@
     ],
     "websiteURL": "https://github.com/bouob/agent-harness",
     "defaultPrompt": [
+      "Use agent-harness-init to initialize Codex-only model routing.",
       "Use agent-harness-sprint-plan to turn this feature idea into a decision-complete sprint plan.",
       "Use agent-harness-sprint to run this plan with parallel subagents where ownership is disjoint."
     ],
