@@ -2,9 +2,14 @@
 
 [English](./README.md)
 
-一個 [Claude Code plugin](https://docs.anthropic.com/en/docs/claude-code/plugins)，提供多代理人編排架構——自主的 Planner→Generator→Evaluator Sprint，搭配 Agent Teams 平行執行與迭代回饋迴圈。
+一個雙平台 agent workflow 套件，提供多代理人編排架構。
+
+- **Claude Code**：透過 plugin commands 執行自主 Planner→Generator→Evaluator Sprint，搭配 Agent Teams 平行執行與迭代回饋迴圈。
+- **Codex**：透過 plugin skills 執行先規劃、再明確委派 subagents 的 Sprint，並提供 Codex lifecycle hooks。
 
 ## 安裝
+
+### Claude Code
 
 ```bash
 # 加入 marketplace（一次性）
@@ -17,7 +22,22 @@
 claude --plugin-dir ./agent-harness
 ```
 
+### Codex
+
+```bash
+# 在包含 agent-harness 的上一層目錄執行
+codex plugin marketplace add ./agent-harness
+
+# 或在本 repo 內執行
+codex plugin marketplace add .
+```
+
+重新啟動 Codex，開啟 `/plugins`，選擇 `Agent Harness` marketplace，安裝
+`agent-harness`。詳細步驟見 `docs/codex-install.md`。
+
 ## Quick Start
+
+### Claude Code
 
 裝完後先跑一次 wizard，根據你能使用的 Claude 模型設定路由：
 
@@ -39,12 +59,30 @@ Wizard 大約 30 秒——詢問你有哪些 Claude 模型權限（Opus / Sonnet
 > 建議跑 `/agent-harness:init` 選 `All models — Opus, Sonnet, Haiku`**——Opus
 > Planner 的任務拆解品質明顯比 Sonnet 好。
 
+### Codex
+
+先規劃：
+
+```text
+Use agent-harness-sprint-plan to plan this feature before implementation: 建立一個包含 email/password 和 Google OAuth 的登入頁面
+```
+
+再執行已確認的計畫：
+
+```text
+Use agent-harness-sprint to run the approved plan. Spawn parallel subagents only for disjoint tasks.
+```
+
+Codex 只有在明確要求時才會啟動 subagents，所以 Codex skill 會明確標出哪些任務可平行、哪些任務必須依序處理。
+
 ## Skills
 
 | Skill | 用法 |
 |-------|------|
 | `/sprint <spec>` | 自主多代理人 Sprint：分解 → 平行實作 → 評估 → 迭代（固定 6 階段流程，產出 `.sprint/<ts>/` 工作區）|
 | `/harness-engineering [任務\|問題]` | 多代理人 harness 框架：規劃、執行、設計審查、模型路由、診斷 harness 失敗（Anthropic 2026-04-04 P-G-E pattern + Harness Defects 診斷）|
+| `agent-harness-sprint-plan` | Codex skill：只讀探索與 Sprint 規劃，不實作 |
+| `agent-harness-sprint` | Codex skill：依已確認的計畫執行，並明確委派 subagents |
 
 ## Commands
 
@@ -71,6 +109,8 @@ Schema：`skills/sprint/references/config-schema.md`。
 
 ## 運作方式
 
+### Claude Code
+
 ```
 /sprint 建立一個包含 email/password 和 Google OAuth 的登入頁面
        │
@@ -86,6 +126,24 @@ Schema：`skills/sprint/references/config-schema.md`。
        └─ Phase 6: 決策閘門
                    ├─ 全部 PASS → 完成，向使用者報告
                    └─ 有 FAIL → 重跑失敗任務（最多 3 次迭代）
+```
+
+### Codex
+
+```
+agent-harness-sprint-plan <spec>
+       │
+       ├─ 只讀探索 repo
+       ├─ 產生含驗收標準與 ownership 邊界的 Sprint 計畫
+       └─ 交給使用者確認
+
+agent-harness-sprint <approved plan>
+       │
+       ├─ 初始化 .sprint/<timestamp>/ artifacts
+       ├─ 明確要求時，將 disjoint tasks 委派給平行 subagents
+       ├─ shared-file 或相依任務依序處理
+       ├─ 用具體證據評估驗收標準
+       └─ 回報變更、驗證與風險
 ```
 
 ## 模型路由
@@ -105,9 +163,17 @@ Schema：`skills/sprint/references/config-schema.md`。
 
 ## 需求
 
+### Claude Code
+
 - 任何 Claude Code 訂閱方案或 API 都適用——模型路由可透過 `/agent-harness:init` 配置（有 Opus 權限的 Planner 品質最佳，Sonnet 也可頂替）
 - 最大化平行需要啟用 Agent Teams（`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`）
 - Playwright MCP（選用）供 Evaluator 階段進行真實 UI 驗證
+
+### Codex
+
+- 支援 plugin 的 Codex
+- Subagent workflows 啟用（目前 Codex release 預設啟用）
+- 若要使用 sprint push guard，需要啟用 plugin hooks
 
 ## 推薦工作流程
 
@@ -127,7 +193,8 @@ Schema：`skills/sprint/references/config-schema.md`。
 |------|------|------|
 | v0.2.0 | 純 Claude Code — 初版 | 已發布 |
 | v0.3.x – v0.5.x | 多 host 實驗（Codex CLI generator backend、Auggie CLI 鋪設、schema v2 加 engine namespace）。v0.6.0 已撤回，詳見下方 | 已撤回 |
-| **v0.6.0** | **回歸純 Claude Code、簡化版**。Schema v3（純字串 model）。v0.4.x – v0.5.x 的 config 會自動 lift；含非 claude engine 的 config 會被拒絕並提示重跑 init。保留 Recommended Workflow 與 plan-mode 提示。 | **目前版本** |
+| v0.6.0 | 回歸純 Claude Code、簡化版。Schema v3（純字串 model）。v0.4.x – v0.5.x 的 config 會自動 lift；含非 claude engine 的 config 會被拒絕並提示重跑 init。保留 Recommended Workflow 與 plan-mode 提示。 | 已發布 |
+| **v0.7.0** | **雙平台套件**。Claude Code plugin 維持穩定；新增 `.codex-plugin/`、Codex skills、選用 Codex hooks 與 local marketplace metadata。 | **目前版本** |
 
 ### 為什麼撤回 v0.4–v0.5 多 host 路線
 
@@ -148,6 +215,10 @@ Codex / Auggie 實驗碰到兩個務實阻礙，讓多 host 對 agent-harness
 v0.4.x – v0.5.x 的 schema-v2 / `adapters/` / `templates/` 鷹架已刪除。
 v0.6.0 只保留在純 Claude Code 場景仍有價值的耐久改良：plan-mode
 工作流程建議、sprint contract 工件、harness-engineering meta-skill。
+
+v0.7.0 以獨立 adapter 方式重新加入 Codex 支援，不把 Codex engine 混回
+Claude `/sprint` runtime。Claude 端改動建議記錄在
+`docs/claude-code-change-recommendations.md`。
 
 ## 授權
 

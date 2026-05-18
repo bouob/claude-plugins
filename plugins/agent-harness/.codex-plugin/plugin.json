@@ -1,0 +1,41 @@
+{
+  "name": "agent-harness",
+  "version": "2.1.0",
+  "description": "Multi-agent sprint harness for Codex: plan-first Planner/Generator/Evaluator workflows with explicit subagent delegation.",
+  "author": {
+    "name": "Victor",
+    "url": "https://github.com/bouob"
+  },
+  "homepage": "https://github.com/bouob/agent-harness",
+  "repository": "https://github.com/bouob/agent-harness",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "multi-agent",
+    "subagents",
+    "sprint",
+    "planner",
+    "generator",
+    "evaluator",
+    "workflow"
+  ],
+  "skills": "./codex/skills/",
+  "hooks": "./codex/hooks/hooks.json",
+  "interface": {
+    "displayName": "Agent Harness",
+    "shortDescription": "Plan-first multi-agent sprints for Codex",
+    "longDescription": "Reusable Codex workflows for planning, delegating, evaluating, and iterating complex software tasks with explicit subagent orchestration.",
+    "developerName": "Victor",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/bouob/agent-harness",
+    "defaultPrompt": [
+      "Use agent-harness-sprint-plan to turn this feature idea into a decision-complete sprint plan.",
+      "Use agent-harness-sprint to run this plan with parallel subagents where ownership is disjoint."
+    ],
+    "brandColor": "#10A37F"
+  }
+}
