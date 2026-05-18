@@ -4,7 +4,7 @@ Canonical reference for the Codex model routing config consumed by
 `agent-harness-sprint-plan` and `agent-harness-sprint`, and written by
 `agent-harness-init`.
 
-**Schema version:** v1.
+**Schema version:** v2.
 
 Codex configuration is intentionally separate from Claude Code configuration:
 
@@ -28,20 +28,50 @@ Built-in defaults backfill anything nobody set.
 For each read attempt, treat missing files as `{}`. Do not fail because a
 project has no local override.
 
-## Schema v1
+## Schema v2
+
+Each role accepts one of two route shapes:
+
+- `{"mode": "inherit"}` - do not override model or reasoning
+- `{"mode": "explicit", "model": "...", "reasoning_effort": "..."}` - pass
+  explicit overrides to Codex when spawning that role
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "host": "codex",
   "models": {
-    "planner": { "mode": "inherit" },
-    "evaluator": { "mode": "inherit" },
+    "planner": {
+      "mode": "explicit",
+      "model": "gpt-5.5",
+      "reasoning_effort": "high"
+    },
+    "evaluator": {
+      "mode": "explicit",
+      "model": "gpt-5.4",
+      "reasoning_effort": "medium"
+    },
     "generator": {
-      "code": { "mode": "inherit" },
-      "write": { "mode": "inherit" },
-      "research": { "mode": "inherit" },
-      "collect": { "mode": "inherit" }
+      "code": {
+        "mode": "explicit",
+        "model": "gpt-5.4",
+        "reasoning_effort": "high"
+      },
+      "write": {
+        "mode": "explicit",
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium"
+      },
+      "research": {
+        "mode": "explicit",
+        "model": "gpt-5.4-mini",
+        "reasoning_effort": "low"
+      },
+      "collect": {
+        "mode": "explicit",
+        "model": "gpt-5.4-mini",
+        "reasoning_effort": "low"
+      }
     }
   }
 }
@@ -51,35 +81,49 @@ project has no local override.
 
 | Field | Type | Valid Values | Default |
 |---|---|---|---|
-| `version` | integer | `1` | `1` |
+| `version` | integer | `2` | `2` |
 | `host` | string | `codex` | `codex` |
-| `models.planner.mode` | string | `inherit` | `inherit` |
-| `models.evaluator.mode` | string | `inherit` | `inherit` |
-| `models.generator.code.mode` | string | `inherit` | `inherit` |
-| `models.generator.write.mode` | string | `inherit` | `inherit` |
-| `models.generator.research.mode` | string | `inherit` | `inherit` |
-| `models.generator.collect.mode` | string | `inherit` | `inherit` |
+| `models.<role>.mode` | string | `inherit` / `explicit` | `inherit` |
+| `models.<role>.model` | string | Any Codex model id | unset |
+| `models.<role>.reasoning_effort` | string | `low` / `medium` / `high` / `xhigh` | unset |
+
+Roles are:
+
+- `planner`
+- `evaluator`
+- `generator.code`
+- `generator.write`
+- `generator.research`
+- `generator.collect`
 
 ## Routing Behavior
 
-`mode: "inherit"` means the orchestrator should not pass a model override when
-spawning Codex subagents. Subagents inherit the current Codex session model and
-reasoning settings.
+### `mode: "inherit"`
 
-This is the only mode produced by the v1 init skill. It avoids hard-coding
-Codex model names that may vary by account, date, tier, or runtime.
+The orchestrator should not pass a `model` or `reasoning_effort` override when
+spawning that Codex subagent. The subagent inherits the current Codex session
+model and reasoning settings.
 
-Future schema versions may add an explicit model mode, but v1 readers should
-treat unknown modes as unsupported and fall back to `inherit` only after
-warning the user.
+### `mode: "explicit"`
 
-## Default Config
+The orchestrator should pass the configured `model` when spawning that role.
+If `reasoning_effort` is present, pass it too.
+
+`reasoning_effort` is optional so users can override model only while keeping
+the session's current reasoning level.
+
+The schema intentionally does not hard-code an allowlist of Codex model ids.
+Model availability changes by account, date, tier, and runtime. Document
+recommended models, but let runtime determine whether a specific model is
+accepted.
+
+## Built-in Defaults
 
 When no config file exists, use this built-in default:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "host": "codex",
   "models": {
     "planner": { "mode": "inherit" },
@@ -93,3 +137,81 @@ When no config file exists, use this built-in default:
   }
 }
 ```
+
+## Recommended Presets
+
+These presets are guidance for `agent-harness-init`. They are not stored as
+named presets in the file.
+
+### `all-inherit`
+
+Use the built-in default above. Best when the user prefers changing models by
+switching the current Codex session.
+
+### `balanced`
+
+```json
+{
+  "version": 2,
+  "host": "codex",
+  "models": {
+    "planner": {
+      "mode": "explicit",
+      "model": "gpt-5.5",
+      "reasoning_effort": "high"
+    },
+    "evaluator": {
+      "mode": "explicit",
+      "model": "gpt-5.4",
+      "reasoning_effort": "medium"
+    },
+    "generator": {
+      "code": {
+        "mode": "explicit",
+        "model": "gpt-5.4",
+        "reasoning_effort": "high"
+      },
+      "write": {
+        "mode": "explicit",
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium"
+      },
+      "research": {
+        "mode": "explicit",
+        "model": "gpt-5.4-mini",
+        "reasoning_effort": "low"
+      },
+      "collect": {
+        "mode": "explicit",
+        "model": "gpt-5.4-mini",
+        "reasoning_effort": "low"
+      }
+    }
+  }
+}
+```
+
+## Migration
+
+### v1 -> v2
+
+v1 used only `{"mode": "inherit"}` route objects. Treat every v1 role as the
+same route in v2. Do not require automatic rewrite; a re-run of
+`agent-harness-init` may write the v2 file when the user confirms.
+
+### Forward compatibility
+
+If a reader encounters:
+
+- unknown `version`
+- unknown `host`
+- unknown `mode`
+- `mode: "explicit"` without `model`
+- malformed `reasoning_effort`
+
+warn the user and fall back that role to `{"mode": "inherit"}` for the current
+run.
+
+If Codex rejects the configured `model` or `reasoning_effort` at runtime, warn
+the user and fall back that role to inherit-mode routing instead of aborting
+the whole sprint.

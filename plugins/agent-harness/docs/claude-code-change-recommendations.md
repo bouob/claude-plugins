@@ -6,10 +6,10 @@ This file records Claude Code-side changes suggested while adding Codex support.
 
 No Claude Code command or sprint skill rewrite is required for the Codex adapter.
 
-The only Claude-facing changes recommended for v0.7.0 are:
+The only Claude-facing changes recommended for v2.2.1 are:
 
 - Update README content to document the new Codex adapter.
-- Bump Claude plugin metadata to `0.7.0` so both plugin manifests describe the same release.
+- Bump Claude plugin metadata to `2.2.1` so both plugin manifests describe the same release.
 - Keep `commands/init.md` and `skills/sprint/SKILL.md` Claude Code-only.
 
 ## Deferred Ideas

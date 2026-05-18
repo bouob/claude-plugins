@@ -1,6 +1,6 @@
 ---
 name: agent-harness-init
-description: Initialize agent-harness model routing for Codex. Writes Codex-only config under .codex or ~/.codex using inherit-mode routing so subagents use the current Codex session model.
+description: Initialize agent-harness model routing for Codex. Writes Codex-only config under .codex or ~/.codex using inherit or explicit per-role routing.
 argument-hint: "[--project | --user | --show]"
 ---
 
@@ -23,9 +23,13 @@ Read these files in order:
 1. `./.codex/agent-harness.local.json`
 2. `~/.codex/agent-harness.json`
 
-If either file exists, parse the JSON and show the current config in a fenced
-code block. If parsing fails, report the invalid file and recommend
-reconfiguration.
+If either file exists:
+
+1. Parse the JSON.
+2. If it is v1, resolve it as v2 by treating every role as
+   `{"mode": "inherit"}`.
+3. Show the current resolved config in a fenced code block.
+4. If parsing fails, report the invalid file and recommend reconfiguration.
 
 If the user passed `--show`, print the resolved config and stop without writing.
 
@@ -44,13 +48,21 @@ Recommend project config when the user is inside a repository and wants the
 setting to apply only there. Recommend user config when they want the same
 behavior across repositories.
 
-## Step 3 - Build Config
+## Step 3 - Choose Routing Strategy
 
-Use this v1 config exactly:
+Ask which preset to use:
+
+- `all-inherit`
+- `balanced`
+- `custom`
+
+### `all-inherit`
+
+Write the built-in default:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "host": "codex",
   "models": {
     "planner": { "mode": "inherit" },
@@ -65,16 +77,94 @@ Use this v1 config exactly:
 }
 ```
 
-`mode: "inherit"` means Codex subagents inherit the current session model. Do
-not translate Claude model names such as `opus`, `sonnet`, or `haiku` into this
-file.
+### `balanced`
+
+Write this preset:
+
+```json
+{
+  "version": 2,
+  "host": "codex",
+  "models": {
+    "planner": {
+      "mode": "explicit",
+      "model": "gpt-5.5",
+      "reasoning_effort": "high"
+    },
+    "evaluator": {
+      "mode": "explicit",
+      "model": "gpt-5.4",
+      "reasoning_effort": "medium"
+    },
+    "generator": {
+      "code": {
+        "mode": "explicit",
+        "model": "gpt-5.4",
+        "reasoning_effort": "high"
+      },
+      "write": {
+        "mode": "explicit",
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium"
+      },
+      "research": {
+        "mode": "explicit",
+        "model": "gpt-5.4-mini",
+        "reasoning_effort": "low"
+      },
+      "collect": {
+        "mode": "explicit",
+        "model": "gpt-5.4-mini",
+        "reasoning_effort": "low"
+      }
+    }
+  }
+}
+```
+
+### `custom`
+
+Ask per role:
+
+1. `planner`
+2. `evaluator`
+3. `generator.code`
+4. `generator.write`
+5. `generator.research`
+6. `generator.collect`
+
+For each role ask:
+
+1. `inherit` or `explicit`
+2. If `explicit`, ask for `model`
+3. If `explicit`, ask for `reasoning_effort`
+
+Accepted `reasoning_effort` values are:
+
+- `low`
+- `medium`
+- `high`
+- `xhigh`
+
+Users may leave `reasoning_effort` empty only if they want to override the
+model while keeping the current session reasoning level.
+
+Do not translate Claude model names such as `opus`, `sonnet`, or `haiku` into
+this file. Use Codex model ids such as `gpt-5.5`, `gpt-5.4`, or
+`gpt-5.4-mini`.
 
 ## Step 4 - Preview and Confirm
 
 Show:
 
 - Selected target path
-- A short explanation: "All roles inherit the current Codex session model."
+- A short explanation:
+  `Roles in inherit mode use the current Codex session model and reasoning. Roles in explicit mode pass model and optional reasoning overrides.`
+- A role table with columns:
+  - Role
+  - Mode
+  - Model
+  - Reasoning
 - The JSON that will be written
 
 Ask for confirmation before writing.
@@ -87,7 +177,7 @@ Create the parent directory if needed, then write the pretty-printed JSON with
 After writing, tell the user:
 
 ```text
-Config written. Codex sprints will inherit the current Codex session model for Planner, Evaluator, and Generator subagents.
+Config written. Codex sprints will use per-role inherit or explicit routing for Planner, Evaluator, and Generator subagents.
 ```
 
 ## Gotchas
@@ -98,3 +188,5 @@ Config written. Codex sprints will inherit the current Codex session model for P
   approval instead of choosing another location silently.
 - Project config should be local-only. If the repository does not already ignore
   `.codex/*.local.json`, mention that the user may want to add an ignore rule.
+- Do not hard-code a runtime allowlist of model ids. Codex model availability is
+  account-specific and time-sensitive.

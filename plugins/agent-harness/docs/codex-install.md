@@ -39,8 +39,20 @@ $agent-harness:agent-harness-init
 
 The init skill writes Codex config to `.codex/agent-harness.local.json` or
 `~/.codex/agent-harness.json`. It does not read or write Claude Code config.
-The default routing uses `mode: "inherit"`, so Planner, Evaluator, and
-Generator subagents inherit the current Codex session model.
+
+Codex config now supports per-role routing:
+
+- `mode: "inherit"` - use the current Codex session model and reasoning
+- `mode: "explicit"` - pass a configured `model` and optional `reasoning_effort`
+
+The built-in default remains all-inherit. The recommended `balanced` preset uses:
+
+- Planner: `gpt-5.5` + `high`
+- Evaluator: `gpt-5.4` + `medium`
+- Generator code: `gpt-5.4` + `high`
+- Generator write: `gpt-5.4` + `medium`
+- Generator research: `gpt-5.4-mini` + `low`
+- Generator collect: `gpt-5.4-mini` + `low`
 
 Ask Codex directly:
 
@@ -55,6 +67,10 @@ $agent-harness:agent-harness-sprint <approved plan>
 ```
 
 Codex only starts subagents when explicitly asked. The sprint skill therefore names when to delegate and when to keep work sequential.
+
+If a configured explicit model or reasoning override is malformed or rejected at
+runtime, Codex should warn and fall back that role to inherit-mode routing for
+the current run.
 
 ## Difference From Claude Code
 
