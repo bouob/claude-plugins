@@ -33,7 +33,8 @@ All agents read and write these files. Format must be followed exactly.
 
 ### TASK-001: [title]
 - **type**: code | write | research | collect
-- **model**: sonnet | haiku
+- **model**: opus | sonnet | haiku
+- **effort**: low | medium | high | xhigh | max
 - **depends_on**: [] or [TASK-002, TASK-003]
 - **acceptance_criteria**:
   - [measurable, verb-first criterion]
@@ -57,7 +58,8 @@ Rules:
 - `acceptance_criteria` must be measurable (start with a verb: "Returns", "Renders", "Stores", "Validates")
 - `depends_on` must reference valid task IDs in the same plan
 - Every task must have at least one acceptance criterion
-- `type` determines which model the Generator uses (see model routing table)
+- `type` determines which `model` and `effort` the Generator uses — look up the orchestrator-provided Resolved Model Routing Table
+- `effort` is the reasoning depth the Generator should apply. The orchestrator translates it into a prompt-level keyword (`Think.`, `Think hard.`, `Think harder.`, `Ultrathink.`) injected at the top of the Generator's prompt. Omit the line entirely for `low`
 
 ---
 

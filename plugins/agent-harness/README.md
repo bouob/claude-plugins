@@ -105,9 +105,17 @@ roles should inherit versus use explicit model or reasoning overrides.
 
 ### Claude Code
 
-Without a config file, `/sprint` uses Sonnet for every role, which is a safe
-default across subscription tiers and API plans. The wizard lets users with
-Opus access upgrade Planner quality or choose lower-cost routing.
+Without a config file, `/sprint` uses Sonnet at `medium` effort for every
+reasoning role (and `low` for `collect`), which is a safe default across
+subscription tiers and API plans. The wizard lets users with Opus access
+upgrade Planner quality (Opus at `high` effort) or choose lower-cost routing.
+
+Each role accepts a `model` (`opus` / `sonnet` / `haiku`) and an `effort`
+(`low` / `medium` / `high` / `xhigh` / `max`). Effort is injected as a
+prompt-level keyword (`Think.`, `Think hard.`, `Think harder.`, `Ultrathink.`)
+at the top of each subagent prompt — a workaround for Claude Code's `Agent`
+tool not yet accepting `effort` at invocation time. The schema is
+forward-compatible with native effort whenever Anthropic ships it.
 
 Schema: `skills/sprint/references/config-schema.md`.
 
@@ -172,9 +180,19 @@ $agent-harness:agent-harness-sprint <approved plan>
 
 ### Claude Code
 
-Default routing uses Sonnet for every role for compatibility. The recommended
-`full-access` preset upgrades Planner to Opus and keeps lower-cost work on
-cheaper models where appropriate.
+Default routing uses Sonnet at `medium` effort for every reasoning role
+(and `low` for `collect`) for compatibility. The recommended `full-access`
+preset upgrades Planner to Opus + `high` effort and keeps lower-cost work
+on cheaper models where appropriate:
+
+| Role | Recommended Route |
+|------|-------------------|
+| Planner | `opus` + `high` |
+| Evaluator | `sonnet` + `medium` |
+| Generator code | `sonnet` + `medium` |
+| Generator write | `sonnet` + `low` |
+| Generator research | `sonnet` + `high` |
+| Generator collect | `haiku` + `low` |
 
 ### Codex
 
@@ -225,7 +243,8 @@ Skip step 1 only when the spec is already concrete and low-risk.
 | v0.2.0 | Claude Code only, initial release | Released |
 | v0.3.x -> v0.5.x | Multi-host experiment with older Codex / Auggie adapters | Reverted |
 | v0.6.0 | Claude Code-only simplification, schema v3 for Claude routing | Released |
-| v2.2.1 | Dual-host package with separate Codex adapter | Current |
+| v2.2.1 | Dual-host package with separate Codex adapter | Released |
+| v2.3.0 | Per-role reasoning effort (low/medium/high/xhigh/max) for Claude, schema v4 | Current |
 
 Codex support is intentionally separate from the Claude `/sprint` runtime. The
 Codex adapter keeps its own config files, skills, and hooks rather than mixing

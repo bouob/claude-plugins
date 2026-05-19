@@ -7,16 +7,14 @@ argument-hint: ""
 # /agent-harness:init — Configure Model Routing
 
 Walk the user through writing `~/.claude/agent-harness.json` so `/sprint`
-knows which Claude models to assign to each role (Planner, Evaluator,
-Generator). Defaults assume Opus access; this wizard lets users on
-Pro/Team subscriptions, Sonnet-only API keys, or any other access shape
-route around the assumption.
+knows which Claude models **and reasoning effort** to assign to each role
+(Planner, Evaluator, Generator). Defaults assume Opus access; this wizard
+lets users on Pro/Team subscriptions, Sonnet-only API keys, or any other
+access shape route around the assumption.
 
-> **v0.6.0 simplified back to Claude Code-only.** The v0.4.x – v0.5.x
-> multi-host wizard (Codex / Auggie host options, schema v2 with
-> engine namespacing) was rolled back. v1 / v2 configs auto-lift to
-> v3 plain-model-string format on first read; v2 configs with
-> non-claude engines are rejected with a re-init message.
+> **v0.7.0 added per-role effort (reasoning level).** Each role is now
+> `{model, effort}` instead of a bare model string. v1 / v2 / v3 configs
+> auto-lift to v4 on first read.
 
 Schema reference: `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/config-schema.md`.
 
@@ -26,7 +24,7 @@ Schema reference: `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/config-schema.
 
 Try Read on `~/.claude/agent-harness.json`. If the file exists:
 
-1. Parse the JSON. If `version` is missing or `1` or `2`, run the
+1. Parse the JSON. If `version` is missing or `1` / `2` / `3`, run the
    auto-lift described in `references/config-schema.md` § Migration.
    v2 configs whose any `models.<role>.engine != "claude"` ABORT here
    with:
@@ -55,73 +53,130 @@ Options (display text → internal preset → preview content):
 ### Option 1 — `All models — Opus, Sonnet, Haiku` → `full-access`
 preview:
 ```
-| Role                | Model  |
-|---------------------|--------|
-| Planner             | Opus   |
-| Evaluator           | Sonnet |
-| Generator (default) | Sonnet |
-| Generator (collect) | Haiku  |
+| Role                | Model  | Effort |
+|---------------------|--------|--------|
+| Planner             | Opus   | high   |
+| Evaluator           | Sonnet | medium |
+| Generator (code)    | Sonnet | medium |
+| Generator (write)   | Sonnet | low    |
+| Generator (research)| Sonnet | high   |
+| Generator (collect) | Haiku  | low    |
 ```
 
 ### Option 2 — `Sonnet + Haiku (no Opus access)` → `no-opus`
 preview:
 ```
-| Role                | Model  |
-|---------------------|--------|
-| Planner             | Sonnet |
-| Evaluator           | Sonnet |
-| Generator (default) | Sonnet |
-| Generator (collect) | Haiku  |
+| Role                | Model  | Effort |
+|---------------------|--------|--------|
+| Planner             | Sonnet | high   |
+| Evaluator           | Sonnet | medium |
+| Generator (code)    | Sonnet | medium |
+| Generator (write)   | Sonnet | low    |
+| Generator (research)| Sonnet | high   |
+| Generator (collect) | Haiku  | low    |
 ```
 
 ### Option 3 — `Sonnet only` → `sonnet-only`
 preview:
 ```
-| Role                | Model  |
-|---------------------|--------|
-| Planner             | Sonnet |
-| Evaluator           | Sonnet |
-| Generator (default) | Sonnet |
-| Generator (collect) | Sonnet |
+| Role                | Model  | Effort |
+|---------------------|--------|--------|
+| Planner             | Sonnet | high   |
+| Evaluator           | Sonnet | medium |
+| Generator (code)    | Sonnet | medium |
+| Generator (write)   | Sonnet | low    |
+| Generator (research)| Sonnet | high   |
+| Generator (collect) | Sonnet | low    |
 ```
 
 ### Option 4 — `Custom — let me pick each role` → `custom`
 preview:
 ```
-You'll be asked 4 follow-up questions
-to assign a model for each role:
-- Planner
-- Evaluator
-- Generator (default)
-- Generator (collect)
+You'll be asked 5 follow-up questions:
+1. Planner model
+2. Evaluator model
+3. Generator (code/write/research) model
+4. Generator (collect) model
+5. Effort tier: fast / balanced / deep
 ```
 
-## Step 3 — If Preset is `custom`: 4 Follow-Up Questions
+## Step 3 — If Preset is `custom`: 5 Follow-Up Questions
 
 Skip this step unless the user picked `custom`. Otherwise ask each in
-order via `AskUserQuestion`. Options for every question are `opus`,
-`sonnet`, `haiku`.
+order via `AskUserQuestion`.
 
-1. "Which model for the Planner role?" → `models.planner`
-2. "Which model for the Evaluator role?" → `models.evaluator`
+Questions 1-4 — model selection. Options for every question are `opus`,
+`sonnet`, `haiku`:
+
+1. "Which model for the Planner role?" → `models.planner.model`
+2. "Which model for the Evaluator role?" → `models.evaluator.model`
 3. "Which model for Generator default tasks (code / write / research)?"
-   → sets `models.generator.code`, `models.generator.write`, and
-   `models.generator.research` to the same value
+   → sets `models.generator.code.model`, `models.generator.write.model`,
+   and `models.generator.research.model` to the same value
 4. "Which model for Generator collect tasks (data fetching, transforms)?"
-   → `models.generator.collect`
+   → `models.generator.collect.model`
+
+Question 5 — effort tier:
+
+Use `AskUserQuestion`: "Reasoning effort level — controls how hard each
+role thinks. Higher = better quality, slower, more compute."
+
+Options:
+
+### Option a — `fast — minimum thinking, cheapest` → `fast`
+preview:
+```
+| Role                | Effort |
+|---------------------|--------|
+| Planner             | medium |
+| Evaluator           | low    |
+| Generator (code)    | low    |
+| Generator (write)   | low    |
+| Generator (research)| medium |
+| Generator (collect) | low    |
+```
+
+### Option b — `balanced — recommended default` → `balanced` (Recommended)
+preview:
+```
+| Role                | Effort |
+|---------------------|--------|
+| Planner             | high   |
+| Evaluator           | medium |
+| Generator (code)    | medium |
+| Generator (write)   | low    |
+| Generator (research)| high   |
+| Generator (collect) | low    |
+```
+
+### Option c — `deep — maximum quality, slowest` → `deep`
+preview:
+```
+| Role                | Effort |
+|---------------------|--------|
+| Planner             | xhigh  |
+| Evaluator           | high   |
+| Generator (code)    | high   |
+| Generator (write)   | medium |
+| Generator (research)| xhigh  |
+| Generator (collect) | low    |
+```
 
 ## Step 4 — Build and Preview the Config
 
-Construct the JSON v3 object based on the preset (or custom answers
+Construct the JSON v4 object based on the preset (or custom answers
 from Step 3).
 
-### Preset Mappings
+### Preset Mappings (model + effort combined)
 
 | Preset | planner | evaluator | gen.code | gen.write | gen.research | gen.collect |
 |---|---|---|---|---|---|---|
-| `full-access` | opus | sonnet | sonnet | sonnet | sonnet | haiku |
-| `no-opus` | sonnet | sonnet | sonnet | sonnet | sonnet | haiku |
-| `sonnet-only` | sonnet | sonnet | sonnet | sonnet | sonnet | sonnet |
+| `full-access` | opus/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | haiku/low |
+| `no-opus` | sonnet/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | haiku/low |
+| `sonnet-only` | sonnet/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | sonnet/low |
+
+For `custom`, combine Step 3 questions 1-4 (models) with question 5
+(effort tier from the tier table in config-schema.md § Presets).
 
 ### Show the Preview as a Table (User-Friendly)
 
@@ -130,19 +185,17 @@ Print this format to the user — clearer than raw JSON:
 ```
 Selected preset: <preset-name>
 
-| Role                | Model    |
-|---------------------|----------|
-| Planner             | <value>  |
-| Evaluator           | <value>  |
-| Generator (default) | <value>  |
-| Generator (collect) | <value>  |
+| Role                | Model    | Effort |
+|---------------------|----------|--------|
+| Planner             | <model>  | <eff>  |
+| Evaluator           | <model>  | <eff>  |
+| Generator (code)    | <model>  | <eff>  |
+| Generator (write)   | <model>  | <eff>  |
+| Generator (research)| <model>  | <eff>  |
+| Generator (collect) | <model>  | <eff>  |
 
 Will be written to: ~/.claude/agent-harness.json
 ```
-
-The "Generator (default)" row collapses `code`, `write`, `research`
-because they always share the same value (set together in Step 3
-question 3, or identical across all 3 presets).
 
 ### Confirm via AskUserQuestion
 
@@ -157,15 +210,15 @@ they ask:
 
 ```json
 {
-  "version": 3,
+  "version": 4,
   "models": {
-    "planner": "<value>",
-    "evaluator": "<value>",
+    "planner":   { "model": "<value>", "effort": "<value>" },
+    "evaluator": { "model": "<value>", "effort": "<value>" },
     "generator": {
-      "code": "<value>",
-      "write": "<value>",
-      "research": "<value>",
-      "collect": "<value>"
+      "code":     { "model": "<value>", "effort": "<value>" },
+      "write":    { "model": "<value>", "effort": "<value>" },
+      "research": { "model": "<value>", "effort": "<value>" },
+      "collect":  { "model": "<value>", "effort": "<value>" }
     }
   }
 }
@@ -205,7 +258,14 @@ After writing, tell the user:
   so the file remains hand-editable
 - Do not rename the existing config silently if the user picks Cancel;
   only Step 5 writes the file
-- v0.6.0 dropped multi-host support. v2 configs (v0.4.x – v0.5.x) auto-lift
-  by extracting `model` from `{engine: "claude", model: "..."}`. Non-claude
-  engines abort the lift and force re-init — Step 1 handles this gracefully
-  by offering Reconfigure
+- v0.6.0 dropped multi-host support (engine=codex/auggie). v0.7.0
+  added per-role `effort`. v1 / v2 / v3 configs auto-lift to v4 on
+  first read; v2 configs with engine != "claude" abort the lift and
+  force re-init — Step 1 handles this gracefully by offering Reconfigure
+- The `effort` field is currently injected as a prompt-level keyword
+  (`Think.`, `Think hard.`, etc.) because Claude Code's Agent tool does
+  not yet accept effort at invocation time. When the tool gains native
+  effort support, /sprint will switch transparently — the config schema
+  stays the same
+- `max` effort is intentionally not in any preset — reserve it for one-off
+  hand-edits when you genuinely need ultrathink on a specific role
