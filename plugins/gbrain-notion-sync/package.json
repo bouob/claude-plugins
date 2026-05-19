@@ -1,6 +1,6 @@
 {
   "name": "notion-sync",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Sync Notion PAI databases to gbrain knowledge graph",
   "type": "module",
   "scripts": {
