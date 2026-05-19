@@ -1,6 +1,6 @@
 {
   "name": "notion-sync",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "plugin_version": "gbrain-plugin-v1",
   "description": "Sync Notion PAI databases (Projects, To-Do, Inbox, Knowledge Base) to gbrain knowledge graph. Supports pull, push, and status sub-commands via Claude Code skill.",
   "subagents": "subagents"

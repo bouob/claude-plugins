@@ -3,10 +3,12 @@
  * Run gbrain maintenance after a sync (or batch of syncs).
  *
  * Steps (in order, each step's failure does not block the next):
- *   1. gbrain extract links --source notion  — rebuild backlink graph
- *   2. gbrain dream --dry-run                — doc consolidation + timeline
+ *   1. gbrain extract links --source db      — rebuild backlink graph
+ *   2. gbrain dream --dry-run --dir <brain>  — doc consolidation + timeline
  *   3. (only if OPENAI_API_KEY set)
  *      gbrain embed --stale                  — refresh vector index
+ *
+ * Brain dir resolution: GBRAIN_DIR env var > ~/.gbrain (gbrain default).
  *
  * Exit codes:
  *   0 — all attempted steps succeeded
@@ -18,11 +20,14 @@ import { spawnSync } from 'node:child_process';
 import { config } from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import os from 'node:os';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
 config({ path: path.join(ROOT, '.env') });
+
+const BRAIN_DIR = process.env.GBRAIN_DIR || path.join(os.homedir(), '.gbrain');
 
 /**
  * Run a gbrain sub-command synchronously and report outcome.
@@ -58,12 +63,12 @@ function main() {
 
   summary.push({
     step: 'extract links',
-    ...runGbrain('Step 1 — Rebuild backlink graph', ['extract', 'links', '--source', 'notion']),
+    ...runGbrain('Step 1 — Rebuild backlink graph', ['extract', 'links', '--source', 'db']),
   });
 
   summary.push({
     step: 'dream',
-    ...runGbrain('Step 2 — Doc consolidation + timeline (dry-run)', ['dream', '--dry-run']),
+    ...runGbrain('Step 2 — Doc consolidation + timeline (dry-run)', ['dream', '--dry-run', '--dir', BRAIN_DIR]),
   });
 
   if (process.env.OPENAI_API_KEY) {
