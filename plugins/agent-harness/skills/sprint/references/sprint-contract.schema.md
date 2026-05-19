@@ -7,7 +7,7 @@ This document is the single source of truth for the four files exchanged
 between Planner, Generator, and Evaluator during a `/sprint` run.
 
 The contract is versioned: this is **schema v1** of the sprint contract,
-parallel to (but independent of) `agent-harness.json` config schema v3.
+parallel to (but independent of) `agent-harness.json` config schema v4.
 
 ---
 
@@ -78,6 +78,7 @@ Tasks with no dependencies — safe to spawn simultaneously.
 #### TASK-001
 - **type**: code | write | research | collect
 - **model**: opus | sonnet | haiku
+- **effort**: low | medium | high | xhigh | max
 - **summary**: <one sentence>
 - **acceptance**: <which AC-N this task satisfies>
 - **deliverables**: <files / decisions / reports the Generator must produce>
@@ -89,6 +90,7 @@ Tasks with dependencies — listed in execution order.
 #### TASK-002
 - **type**: ...
 - **model**: ...
+- **effort**: ...
 - **depends_on**: [TASK-001]
 - **summary**: ...
 - **acceptance**: ...
@@ -204,7 +206,7 @@ The Generator subagents MUST honor these regardless of model:
 ## Versioning
 
 - **Sprint contract schema:** v1 (this document)
-- **agent-harness.json config schema:** v3 (see `config-schema.md`)
+- **agent-harness.json config schema:** v4 (see `config-schema.md`)
 
 The two schemas evolve independently. Future contract changes (v2+)
 MUST keep v1 readers parsing without errors — extend with new optional
@@ -214,7 +216,7 @@ fields rather than renaming required ones.
 
 ## See Also
 
-- `config-schema.md` — `agent-harness.json` schema v3 (model routing
-  config)
+- `config-schema.md` — `agent-harness.json` schema v4 (model + effort
+  routing config)
 - `../SKILL.md` — Phase definitions that read / write these files
 - `planner.md` / `generator.md` / `evaluator.md` — role prompts

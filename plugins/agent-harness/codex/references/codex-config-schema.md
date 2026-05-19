@@ -191,6 +191,50 @@ switching the current Codex session.
 }
 ```
 
+## Recommended Init Conversation
+
+`agent-harness-init` should guide first-time users with a short setup flow
+before showing schema details.
+
+- First explain this as model routing for planning, checking, coding, and
+  simple research tasks.
+- Keep canonical option labels and example replies in English in this
+  reference. The assistant may still phrase the surrounding explanation in the
+  user's language and should map equivalent replies from other languages.
+- First ask only two decisions:
+  - scope: `This project only` or `All projects`
+  - setup style: `Quick recommended setup`, `Follow current session for everything`, or `Custom setup`
+- Avoid showing JSON or full file paths until preview/confirmation unless the
+  user explicitly asks.
+- For `Custom setup`, prefer work-type prompts over raw role names:
+  - `Planning and review` -> `planner` + `evaluator`
+  - `Coding` -> `generator.code` + `generator.write`
+  - `Research / simple tasks` -> `generator.research` + `generator.collect`
+- Default each work-type pair to the same route unless the user asks to split
+  them.
+
+Suggested first prompt:
+
+```text
+I can help set up agent-harness model routing so planning, review, coding, and
+simple research tasks can use different models automatically.
+
+First choose the scope:
+1. This project only (recommended)
+2. All projects
+
+Then choose the setup style:
+1. Quick recommended setup
+2. Follow current session for everything
+3. Custom setup
+
+Reply with: `1 + 1`
+```
+
+This tighter prompt shape is preferred because earlier Codex models are more
+likely to stay on-rails when given concrete answer formats and delayed exposure
+to raw schema details.
+
 ## Migration
 
 ### v1 -> v2

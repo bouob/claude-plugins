@@ -1,19 +1,34 @@
-# Model Routing Table
+# Model + Effort Routing Table
 
-Route each task to the cheapest model that meets the quality bar. Reserve Opus for work
-that genuinely needs its reasoning depth; default to Sonnet; use Haiku only for mechanical
-work where synthesis isn't required.
+Route each task to the cheapest model + lowest effort that meets the quality bar.
+Reserve Opus for work that genuinely needs its reasoning depth; default to Sonnet;
+use Haiku only for mechanical work where synthesis isn't required. Effort dials
+in reasoning depth independently of model choice.
 
 ## Primary Routing Table
 
-| Task type | Model | Why | Cost note |
-|---|---|---|---|
-| `plan` | Opus | Architectural decomposition, dependency reasoning, acceptance-criteria authoring | High; one Planner per sprint amortizes |
-| `evaluate` | Opus or Sonnet | Verifying against acceptance criteria; Opus when judgment is non-trivial, Sonnet when checks are mechanical | Medium |
-| `code` | Sonnet | Implementation, debugging, test writing | Medium |
-| `write` | Sonnet | Long-form prose, documentation, structured reports | Medium |
-| `research` | Sonnet | Synthesizing multiple sources, connecting concepts | Medium |
-| `collect` | Haiku | Fetching data, format conversion, file discovery, simple transforms | ~15× cheaper than Sonnet |
+| Task type | Model | Effort | Why | Cost note |
+|---|---|---|---|---|
+| `plan` | Opus | high | Architectural decomposition, dependency reasoning, acceptance-criteria authoring | High; one Planner per sprint amortizes |
+| `evaluate` | Opus or Sonnet | medium | Verifying against acceptance criteria; Opus when judgment is non-trivial, Sonnet when checks are mechanical | Medium |
+| `code` | Sonnet | medium | Implementation, debugging, test writing | Medium |
+| `write` | Sonnet | low | Long-form prose, documentation, structured reports | Medium |
+| `research` | Sonnet | high | Synthesizing multiple sources, connecting concepts | Medium |
+| `collect` | Haiku | low | Fetching data, format conversion, file discovery, simple transforms | ~15× cheaper than Sonnet |
+
+## Effort Levels
+
+| Level | When to use | Prompt keyword (`/sprint` injects) |
+|---|---|---|
+| `low` | Mechanical work — no synthesis required | _(no keyword)_ |
+| `medium` | Default for most reasoning tasks | `Think.` |
+| `high` | Multi-source synthesis, judgment calls, planning | `Think hard.` |
+| `xhigh` | High-stakes architecture / security decisions | `Think harder.` |
+| `max` | Reserve for the hardest problems only — costs the most | `Ultrathink.` |
+
+Effort is orthogonal to model: `haiku/high` is cheaper than `opus/low` but the
+ceiling is bounded by the model's capability. Prefer scaling effort up on a
+capable model before reaching for a more expensive model.
 
 ## When to Override
 
@@ -73,7 +88,13 @@ specific project, `/sprint` resolves the actual routing at runtime from a config
 
 Set up via `/agent-harness:init` (interactive wizard). Schema and defaults are documented
 at `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/config-schema.md`. Missing config falls
-back to the table above (Opus planner, Sonnet generator/evaluator, Haiku collect).
+back to the table above (Opus planner at high effort, Sonnet generator/evaluator at
+medium effort, Haiku collect at low effort).
+
+`/sprint` reads `effort` per role from the config and injects the corresponding keyword
+at the top of each subagent prompt. This is a workaround for Claude Code's `Agent` tool
+not yet accepting `effort` at invocation time — the schema is forward-compatible with
+native effort support whenever it lands.
 
 Note: this override mechanism applies only to `/sprint`. The `/harness-engineering` skill
 treats this table as advisory — it's a reference for designing harnesses, not a runtime

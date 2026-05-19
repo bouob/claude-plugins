@@ -38,7 +38,7 @@ concrete deliverable, clear acceptance) can skip plan mode and run
 ## References (read on demand)
 
 - `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/config-schema.md` —
-  routing config, schema v3 (auto-lifts v1 / v2)
+  routing config, schema v4 (auto-lifts v1 / v2 / v3)
 - `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/sprint-contract.schema.md` —
   artifact schema for sprint-meta / plan / progress / eval files
 - `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/planner.md` — Planner
@@ -75,40 +75,66 @@ defaults backfill anything nobody set.
 For each Read attempt, treat ENOENT (file not found) as `{}` — never
 error on missing config.
 
-### Auto-lift legacy schemas (v1 / v2 → v3)
+### Auto-lift legacy schemas (v1 / v2 / v3 → v4)
 
 `config-schema.md` § Migration documents the lift rules. Briefly:
 
-- **v1** (≤ v0.3.x): plain string models, just bump `version: 3`.
+- **v1** (≤ v0.3.x): plain string models. Lift each into `{model, effort}`
+  with role-defaulted effort.
 - **v2** (v0.4.x – v0.5.x): roles wrapped in `{engine, model}`. If
-  `engine == "claude"`, take the `model` field; if `engine` is `codex`
-  or `auggie`, ABORT and tell the user to re-run `/agent-harness:init`
-  (v0.6.0 dropped multi-host support).
+  `engine == "claude"`, lift to `{model: value.model, effort: <default>}`;
+  if `engine` is `codex` or `auggie`, ABORT and tell the user to re-run
+  `/agent-harness:init` (v0.6.0 dropped multi-host support).
+- **v3** (v0.6.x): plain string models without effort. Lift each into
+  `{model, effort}` with role-defaulted effort.
 
-Write the lifted v3 back to the same path so subsequent reads are fast.
+Role-defaulted effort during lift:
+- `planner`, `generator.research` → `high`
+- `evaluator`, `generator.code` → `medium`
+- `generator.write`, `generator.collect` → `low`
+
+Write the lifted v4 back to the same path so subsequent reads are fast.
 
 ### Hold resolved values in scope
 
-- `{planner_model}` — substituted into Phase 2b
-- `{evaluator_model}` — substituted into Phase 5b
+- `{planner_model}`, `{planner_effort}` — substituted into Phase 2b
+- `{evaluator_model}`, `{evaluator_effort}` — substituted into Phase 5b
 - `{generator_routing_table}` — a 4-row markdown table built from
   `models.generator.{code,write,research,collect}` with columns
-  `type | model | when to use`. Use the schema doc text:
+  `type | model | effort | when to use`. Use the schema doc text:
   - `code` — implementing features, fixing bugs, writing tests
   - `write` — long-form text, documentation, structured reports
   - `research` — synthesizing multiple sources, connecting concepts
   - `collect` — fetching data, format conversion, file discovery
 
+### Effort keyword mapping (used in Phases 2 / 3 / 5)
+
+The orchestrator injects this keyword at the **top** of every subagent
+prompt, before any other content. This is how reasoning effort is
+delivered until Claude Code's `Agent` tool accepts `effort` natively.
+
+| `effort` value | Keyword to inject |
+|---|---|
+| `low` | _(no keyword — omit the line entirely)_ |
+| `medium` | `Think.` |
+| `high` | `Think hard.` |
+| `xhigh` | `Think harder.` |
+| `max` | `Ultrathink.` |
+
+Define `{effort_keyword(role_or_type)}` as: look up the role/type's
+`effort` value, then map via the table above. Empty string for `low`.
+
 ### Defaults & hints
 
-**Built-in defaults (no config file)**: every role uses `sonnet`. Safe
-across every tier and API plan — `/sprint` runs without model-access
-errors.
+**Built-in defaults (no config file)**: every reasoning role uses
+`sonnet` at `medium` effort, `collect` at `low`. Safe across every tier
+and API plan — `/sprint` runs without model-access errors.
 
 **Print this hint when running with built-in defaults** (no config file
 at any layer):
-> "Using safe defaults (all Sonnet). Planner quality is better with
-> Opus — run /agent-harness:init to upgrade if you have Opus access."
+> "Using safe defaults (all Sonnet, medium effort). Planner quality is
+> better with Opus + high effort — run /agent-harness:init to upgrade
+> if you have Opus access."
 
 **Plan-mode tip** — print on Phase 0 finish (always):
 > "Tip: ambiguous spec? Plan mode often catches mis-understandings
@@ -155,6 +181,8 @@ Step 2a: Read these files and hold their full text in memory:
 Step 2b: Spawn a subagent (model: {planner_model}) with a prompt assembled from these parts in order:
 
 ```
+{effort_keyword(planner) — single line, e.g. "Think hard." Omit entirely if planner_effort is low.}
+
 {PLANNER_CONTENT — paste full text}
 
 ---
@@ -167,7 +195,7 @@ Step 2b: Spawn a subagent (model: {planner_model}) with a prompt assembled from 
 
 ## Resolved Model Routing Table (assigned by orchestrator for this sprint)
 
-{generator_routing_table — paste the 4-row table built in Phase 0; columns are type | model | when to use}
+{generator_routing_table — paste the 4-row table built in Phase 0; columns are type | model | effort | when to use}
 
 ---
 
@@ -177,8 +205,8 @@ SPEC: {$ARGUMENTS verbatim}
 WORKSPACE: {workspace}
 
 Write `{workspace}/sprint-plan.md` following the sprint-plan.md schema exactly.
-Use the Resolved Model Routing Table above to assign each task's `model` field
-based on its `type`.
+Use the Resolved Model Routing Table above to assign each task's `model` AND
+`effort` fields based on its `type`.
 After writing the file, output exactly: PLANNER DONE
 ```
 
@@ -197,9 +225,13 @@ Step 3a: Read these files and hold their full text in memory:
 - `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/generator.md` → GENERATOR_CONTENT
 - `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/handoff-schema.md` → SCHEMA_CONTENT (reuse from Phase 2 if still available)
 
-For every Generator subagent, build the prompt using this template:
+For every Generator subagent, build the prompt using this template. Look up
+the task's `effort` value from `sprint-plan.md` and map to a keyword before
+spawning:
 
 ```
+{effort_keyword(task.effort) — single line for this specific task. Omit entirely if low.}
+
 {GENERATOR_CONTENT — paste full text}
 
 ---
@@ -267,6 +299,8 @@ Step 5a: Read these files and hold their full text in memory:
 Step 5b: Spawn a subagent (model: {evaluator_model}) with a prompt assembled from these parts:
 
 ```
+{effort_keyword(evaluator) — single line, e.g. "Think." Omit entirely if evaluator_effort is low.}
+
 {EVALUATOR_CONTENT — paste full text}
 
 ---
@@ -375,8 +409,10 @@ Workspace: .sprint/20260427-143022/
 
 ## Gotchas
 
-- Phase 0 reads model config from `~/.claude/agent-harness.json` (user-level) and `./.claude/agent-harness.local.json` (project override). Missing config falls back to all-Sonnet — safe across every tier, but Planner quality is better with Opus
+- Phase 0 reads model + effort config from `~/.claude/agent-harness.json` (user-level) and `./.claude/agent-harness.local.json` (project override). Missing config falls back to all-Sonnet/medium-effort — safe across every tier, but Planner quality is better with Opus + high effort
 - Users with Opus access should run `/agent-harness:init` and pick `full-access` to upgrade Planner to Opus. Without that, /sprint still works on Sonnet, just with slightly lower planning quality
+- **Effort is delivered via prompt-level keyword injection** (`Think hard.`, `Ultrathink.`, etc.) because Claude Code's `Agent` tool currently does not accept `effort` at invocation time — only `model`. Frontmatter `effort` works on statically-defined agents but not on dynamic Agent spawns used here. When Anthropic extends the tool, /sprint will switch to native effort transparently
+- The effort keyword goes at the **very top** of every subagent prompt (before role content). For `effort: low`, omit the line entirely — do not inject an empty string or a "no thinking" marker
 - Workspace path is `.sprint/<timestamp>/` — all handoff files live there, not in the project root
 - Phases 2, 3, and 5 embed full file content into each Agent prompt string — cold-start agents cannot read files they were not given; never pass a file path as a substitution for file content
 - Phase 3 generators also receive the full `sprint-plan.md` content in their prompt — they do not need separate Read access to it
@@ -387,6 +423,6 @@ Workspace: .sprint/20260427-143022/
 - When retrying, Generators receive both the original `sprint-plan.md` AND the failed `sprint-eval.md` so they know exactly what failed and why
 - `.sprint/` is gitignored — sprint artifacts are local-only by default; do not commit them
 - If spec mentions a target folder (e.g. "build under sprint/foo/"), Planner will overwrite existing files in that folder by default — Interpretation must explicitly state "existing files at <path> will be overwritten; if you intended to keep them, abort and rerun with `do not overwrite existing files in <path>` in the spec"
-- **v0.6.0 dropped multi-host (Codex / Auggie) support.** The schema is back to plain string models (v3); v1 / v2 configs are auto-lifted on first read, but v2 configs with engine != "claude" are rejected with a "re-run /agent-harness:init" message.
+- **v0.7.0 added per-role `effort` (reasoning level).** Schema is now v4: each role is `{model, effort}`. v1 / v2 / v3 configs auto-lift on first read with role-defaulted effort values. v2 configs with engine != "claude" still abort the lift and force re-init.
 - v0.3.0 added `references/sprint-contract.schema.md` (artifact schema). v0.4.x – v0.5.x experimented with multi-host (Codex / Auggie) but those tracks were rolled back in v0.6.0 — `references/engine-flag-matrix.md`, `references/cross-host-deployment.md`, and `references/model-registry.md` were removed along with the `adapters/` and `templates/` directories.
 - Plan-mode tip is printed by Phase 0 every run. Users running automated sprints can ignore it; users with vague specs should heed it before launching the workspace.
