@@ -194,6 +194,9 @@ sharing databases with the integration, MCP wiring for Claude Code) is in
 | Scheduled task never runs | `bun` not on Windows PATH when Task Scheduler invokes | Add bun to system PATH (not just user PATH) |
 | Vector search returns nothing | `OPENAI_API_KEY` not set, so `gbrain embed` skipped | Set the key in `.env` and re-run `/notion-sync postprocess` |
 | Pages with > 100 blocks truncated | Known v0.1 limitation; `fetchBlockChildren` doesn't paginate | Wait for v0.4 or PR a fix |
+| HTTP sync stops after first page | `getPage()` falling back to local CLI after HTTP write | Run `bun run build` to get the latest adapter; ensure both `GBRAIN_HTTP_URL` and `GBRAIN_HTTP_TOKEN` are set |
+| `{"error":"invalid_token"}` from gbrain HTTP | `GBRAIN_HTTP_TOKEN` is set to a `client_secret` (`gbrain_cs_...`) instead of an `access_token` | Re-run Step 3 in RUNBOOK.md to exchange credentials for an `access_token` |
+| `Cannot GET /admin` | Admin URL missing trailing slash | Use `http://localhost:7432/admin/` (trailing slash required) |
 
 For everything else: `/notion-sync doctor` is the first stop. It tells you
 which of seven prerequisites is failing.

@@ -2,12 +2,13 @@
  * block-converter.ts
  * Converts Notion block objects to Markdown strings.
  *
- * Supported block types (Phase 1):
+ * Supported block types (Phase 4):
  *   paragraph, heading_1/2/3, bulleted_list_item, numbered_list_item,
- *   to_do, code, quote, divider
+ *   to_do, code, quote, divider, callout, image (external only)
  *
  * Unsupported types produce an HTML comment so callers can identify gaps
- * without crashing.
+ * without crashing. image (file-type) is intentionally kept unsupported
+ * because Notion's signed URLs expire after ~1 hour.
  */
 
 // ---------------------------------------------------------------------------
@@ -105,6 +106,26 @@ function convertDivider(): string {
   return '---';
 }
 
+function convertCallout(block: NotionBlock): string {
+  const content = getBlockContent(block);
+  const icon = (content['icon'] as { emoji?: string } | null)?.emoji ?? '';
+  const text = richTextToPlain(getRichText(block));
+  const prefix = icon ? `${icon} ` : '';
+  return `> ${prefix}${text}`;
+}
+
+function convertImage(block: NotionBlock): string {
+  const content = getBlockContent(block);
+  const imgType = content['type'] as string;
+  if (imgType === 'external') {
+    const url = (content['external'] as { url: string } | null)?.url ?? '';
+    return `![](${url})`;
+  }
+  // file-type URLs expire after ~1 hour — keep as unsupported to trigger the
+  // push body-safety guard rather than persisting a dead link.
+  return `<!-- unsupported block: image (file-type, URL expires) -->`;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -136,6 +157,10 @@ export function blockToMarkdown(block: NotionBlock): string {
       return convertQuote(block);
     case 'divider':
       return convertDivider();
+    case 'callout':
+      return convertCallout(block);
+    case 'image':
+      return convertImage(block);
     default:
       return `<!-- unsupported block: ${block.type} -->`;
   }
@@ -150,4 +175,46 @@ export function blockToMarkdown(block: NotionBlock): string {
  */
 export function blocksToMarkdown(blocks: NotionBlock[]): string {
   return blocks.map(blockToMarkdown).join('\n\n');
+}
+
+/** Notion block types this converter can losslessly round-trip. */
+export const SUPPORTED_BLOCK_TYPES: ReadonlySet<string> = new Set([
+  'paragraph',
+  'heading_1',
+  'heading_2',
+  'heading_3',
+  'bulleted_list_item',
+  'numbered_list_item',
+  'to_do',
+  'code',
+  'quote',
+  'divider',
+  'callout',
+  // 'image' is intentionally absent: only external-type images round-trip
+  // safely. File-type images have expiring URLs, so we keep them unsupported
+  // to let the push body-safety guard fire instead of persisting dead links.
+]);
+
+/**
+ * Scan blocks for types this converter cannot round-trip (callout, table,
+ * toggle, column, image, ...). Used by the push body-safety check: a page
+ * containing any unsupported block must NOT have its body overwritten.
+ *
+ * @param blocks - Notion blocks (typically a page's full child list).
+ * @returns Distinct unsupported type names; empty array means all supported.
+ */
+export function containsUnsupportedBlock(blocks: NotionBlock[]): string[] {
+  const found = new Set<string>();
+  for (const block of blocks) {
+    if (block.type === 'image') {
+      // External images are safe; file-type images have expiring URLs.
+      const content = block['image'] as { type?: string } | undefined;
+      if (content?.type !== 'external') found.add('image');
+      continue;
+    }
+    if (!SUPPORTED_BLOCK_TYPES.has(block.type)) {
+      found.add(block.type);
+    }
+  }
+  return [...found];
 }
