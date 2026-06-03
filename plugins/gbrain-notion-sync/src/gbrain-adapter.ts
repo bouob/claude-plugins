@@ -1,18 +1,134 @@
 /**
  * gbrain-adapter.ts
  * Wraps the `gbrain` CLI via Node.js child_process for async operations.
+ * When GBRAIN_HTTP_URL + GBRAIN_HTTP_TOKEN are set, write operations
+ * (putPage / putRawPage / deletePage) route through the HTTP MCP server
+ * instead of the CLI, eliminating the PGLite single-writer lock conflict
+ * that occurs when `gbrain serve` (stdio MCP) is running concurrently.
  *
- * All five operations (putPage / getPage / listPages / deletePage /
- * extractLinks) are exported as typed async functions.
+ * Exports: putPage / getPage / listPages / deletePage / extractLinks.
  *
  * gbrain binary is expected to be on PATH (installed via `bun link` per
- * RUNBOOK.md).
+ * RUNBOOK.md). CLI signatures verified in docs/gbrain-cli-signatures.md
+ * (gbrain 0.35.1.0, 2026-05-22).
+ *
+ * HTTP mode setup: see RUNBOOK.md §HTTP Server Mode (Lock-Free Sync).
  */
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { createHash } from 'crypto';
 
 const execFileAsync = promisify(execFile);
+
+// ---------------------------------------------------------------------------
+// HTTP mode configuration
+// ---------------------------------------------------------------------------
+
+const GBRAIN_HTTP_URL = process.env.GBRAIN_HTTP_URL?.replace(/\/+$/, '');
+const GBRAIN_HTTP_TOKEN = process.env.GBRAIN_HTTP_TOKEN;
+
+function isHttpMode(): boolean {
+  return !!(GBRAIN_HTTP_URL && GBRAIN_HTTP_TOKEN);
+}
+
+// ---------------------------------------------------------------------------
+// Internal HTTP MCP client
+// ---------------------------------------------------------------------------
+
+interface McpToolCallResponse {
+  jsonrpc: '2.0';
+  result?: {
+    content?: Array<{ type: string; text: string }>;
+    isError?: boolean;
+  };
+  error?: { code: number; message: string; data?: unknown };
+  id: number;
+}
+
+interface HttpGetPageResponse {
+  slug: string;
+  title: string;
+  type: string;
+  frontmatter?: Record<string, unknown>;
+  compiled_truth?: string;
+  timeline?: string;
+  tags?: string[];
+}
+
+/**
+ * Call a gbrain MCP tool via the HTTP server.
+ * Handles both plain-JSON and SSE (text/event-stream) responses.
+ * Throws on HTTP errors, MCP errors, or missing result content.
+ */
+async function callMcpHttp<T>(toolName: string, args: Record<string, unknown>): Promise<T> {
+  const url = `${GBRAIN_HTTP_URL}/mcp`;
+  const requestId = Date.now();
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${GBRAIN_HTTP_TOKEN}`,
+      Accept: 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: toolName, arguments: args },
+      id: requestId,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`gbrain HTTP ${response.status}: ${text}`);
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  let rpc: McpToolCallResponse;
+
+  if (contentType.includes('text/event-stream')) {
+    // Streamable HTTP: parse SSE events and find the matching response.
+    const raw = await response.text();
+    let matched: McpToolCallResponse | null = null;
+    for (const line of raw.split('\n')) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        const msg = JSON.parse(line.slice(6)) as McpToolCallResponse;
+        if (msg.id === requestId) {
+          matched = msg;
+        }
+      } catch {
+        // ignore malformed events
+      }
+    }
+    if (!matched) {
+      throw new Error(`gbrain HTTP SSE: no response matching id ${requestId}`);
+    }
+    rpc = matched;
+  } else {
+    rpc = (await response.json()) as McpToolCallResponse;
+  }
+
+  if (rpc.error) {
+    throw new Error(`gbrain MCP error [${rpc.error.code}]: ${rpc.error.message}`);
+  }
+
+  if (rpc.result?.isError) {
+    const text = rpc.result.content?.find((c) => c.type === 'text')?.text ?? '(no detail)';
+    throw new Error(`gbrain tool error: ${text}`);
+  }
+
+  const textContent = rpc.result?.content?.find((c) => c.type === 'text')?.text;
+  if (!textContent) {
+    return undefined as unknown as T;
+  }
+  return JSON.parse(textContent) as T;
+}
+
+/** stdout buffer cap — pages can be large markdown documents. */
+const MAX_BUFFER = 16 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -38,10 +154,47 @@ export interface PutPageResult {
   auto_timeline?: Record<string, unknown>;
 }
 
-/** Minimal descriptor returned by listPages. */
-export interface GbrainPageSummary {
-  id: string;
+/**
+ * Full page detail parsed from `gbrain get`.
+ * `contentHash` is computed locally (Path A) — gbrain CLI exposes no hash.
+ */
+export interface GbrainPageDetail {
+  slug: string;
   title: string;
+  /** Best-effort parsed YAML frontmatter (scalars, quoted strings, arrays). */
+  frontmatter: Record<string, unknown>;
+  /** Raw YAML block between the `---` fences (verbatim). */
+  frontmatterRaw: string;
+  /** Markdown body, leading/trailing blank lines normalized. */
+  body: string;
+  /** SHA-256 of the normalized body. Stable change-detection key. */
+  contentHash: string;
+}
+
+/** One row of `gbrain list` TSV output. */
+export interface GbrainPageSummary {
+  slug: string;
+  type: string;
+  /** Date only (YYYY-MM-DD) — gbrain CLI `list` does not print time. */
+  date: string;
+  title: string;
+}
+
+/** Options accepted by listPages. */
+export interface ListPagesOptions {
+  /** ISO date or timestamp; returns pages with updated_at > value. */
+  updatedAfter?: string;
+  /** Max results. Defaults to 1000 (CLI default is only 50). */
+  limit?: number;
+  /** Sort order. Defaults to gbrain's updated_desc. */
+  sort?: 'updated_desc' | 'updated_asc' | 'created_desc' | 'slug';
+  includeDeleted?: boolean;
+}
+
+/** Options accepted by getPage. */
+export interface GetPageOptions {
+  fuzzy?: boolean;
+  includeDeleted?: boolean;
 }
 
 /** Options accepted by extractLinks. */
@@ -51,22 +204,195 @@ export interface ExtractLinksOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Internal helper
+// Internal helpers
 // ---------------------------------------------------------------------------
 
 /**
  * Run a `gbrain` sub-command and return parsed JSON output.
- * Throws on non-zero exit code.
+ * Throws on non-zero exit code. Use only for commands with `--json`.
  */
 async function runGbrain<T>(args: string[]): Promise<T> {
   const { stdout } = await execFileAsync('gbrain', args, {
     env: process.env,
+    maxBuffer: MAX_BUFFER,
   });
   const trimmed = stdout.trim();
   if (!trimmed) {
     return undefined as unknown as T;
   }
   return JSON.parse(trimmed) as T;
+}
+
+/**
+ * Run a `gbrain` sub-command and return raw stdout (no JSON parsing).
+ * `gbrain get` / `gbrain list` print human-readable text, not JSON —
+ * see docs/gbrain-cli-signatures.md.
+ */
+async function runGbrainRaw(args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync('gbrain', args, {
+    env: process.env,
+    maxBuffer: MAX_BUFFER,
+  });
+  return stdout;
+}
+
+/** Strip a single layer of matching single/double quotes. */
+function unquote(s: string): string {
+  if (s.length >= 2) {
+    const a = s[0];
+    const b = s[s.length - 1];
+    if ((a === '"' && b === '"') || (a === "'" && b === "'")) {
+      return s.slice(1, -1);
+    }
+  }
+  return s;
+}
+
+/**
+ * Minimal YAML frontmatter parser for the subset js-yaml (via gbrain's
+ * gray-matter) emits: scalar `key: value`, quoted strings, flow arrays
+ * `[a, b]`, block arrays (`  - item`), and block scalars (`>`/`|`).
+ * Not a general YAML parser — see docs/gbrain-cli-signatures.md.
+ */
+function parseFrontmatter(raw: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const lines = raw.replace(/\r\n/g, '\n').split('\n');
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === '') {
+      i++;
+      continue;
+    }
+    const kv = line.match(/^([A-Za-z0-9_]+):\s*(.*)$/);
+    if (!kv) {
+      i++;
+      continue;
+    }
+    const key = kv[1];
+    const rest = kv[2].trim();
+
+    if (rest === '') {
+      // Empty value, or the start of a block array (`  - item` lines).
+      const arr: string[] = [];
+      let j = i + 1;
+      while (j < lines.length) {
+        const item = lines[j].match(/^\s+-\s+(.*)$/);
+        if (!item) break;
+        arr.push(unquote(item[1].trim()));
+        j++;
+      }
+      out[key] = arr;
+      i = j;
+    } else if (rest[0] === '>' || rest[0] === '|') {
+      // Block scalar: folded (>) joins lines with spaces; literal (|) keeps
+      // newlines. Chomping indicators (-/+) only affect trailing newlines,
+      // which .trim() handles for our single-value use.
+      const folded = rest[0] === '>';
+      const content: string[] = [];
+      let j = i + 1;
+      while (j < lines.length) {
+        const l = lines[j];
+        if (l.trim() === '') {
+          content.push('');
+          j++;
+        } else if (/^\s/.test(l)) {
+          content.push(l.replace(/^\s+/, ''));
+          j++;
+        } else {
+          break;
+        }
+      }
+      while (content.length > 0 && content[content.length - 1] === '') {
+        content.pop();
+      }
+      out[key] = (folded ? content.join(' ') : content.join('\n')).trim();
+      i = j;
+    } else if (rest.startsWith('[') && rest.endsWith(']')) {
+      out[key] = rest
+        .slice(1, -1)
+        .split(',')
+        .map((s) => unquote(s.trim()))
+        .filter((s) => s !== '');
+      i++;
+    } else {
+      out[key] = unquote(rest);
+      i++;
+    }
+  }
+  return out;
+}
+
+/** Split raw `gbrain get` stdout into frontmatter + normalized body. */
+function parseGbrainPage(slug: string, stdout: string): GbrainPageDetail {
+  const lines = stdout.replace(/\r\n/g, '\n').split('\n');
+
+  // Locate the opening `---` fence, tolerating blank lines before it.
+  let open = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === '---') {
+      open = i;
+      break;
+    }
+    if (lines[i].trim() !== '') break;
+  }
+
+  let frontmatterRaw = '';
+  let bodyLines: string[];
+  if (open >= 0) {
+    let close = -1;
+    for (let i = open + 1; i < lines.length; i++) {
+      if (lines[i].trim() === '---') {
+        close = i;
+        break;
+      }
+    }
+    if (close >= 0) {
+      frontmatterRaw = lines.slice(open + 1, close).join('\n');
+      bodyLines = lines.slice(close + 1);
+    } else {
+      bodyLines = lines.slice(open + 1);
+    }
+  } else {
+    bodyLines = lines;
+  }
+
+  const body = bodyLines.join('\n').replace(/^\n+/, '').replace(/\s+$/, '') + '\n';
+  const frontmatter = parseFrontmatter(frontmatterRaw);
+  const title =
+    typeof frontmatter.title === 'string' ? (frontmatter.title as string) : '';
+  const contentHash = createHash('sha256').update(body, 'utf8').digest('hex');
+
+  return { slug, title, frontmatter, frontmatterRaw, body, contentHash };
+}
+
+/**
+ * Render the structured `get_page` HTTP response into the same markdown
+ * shape the CLI formatter returns, so existing parsing stays unchanged.
+ */
+function serializeHttpPage(page: HttpGetPageResponse): string {
+  const fullFrontmatter: Record<string, unknown> = {
+    type: page.type,
+    title: page.title,
+    ...(page.frontmatter ?? {}),
+  };
+  if ((page.tags?.length ?? 0) > 0) {
+    fullFrontmatter.tags = page.tags;
+  }
+
+  const lines = ['---'];
+  for (const [key, value] of Object.entries(fullFrontmatter)) {
+    lines.push(`${key}: ${JSON.stringify(value)}`);
+  }
+  lines.push('---', '');
+
+  let body = page.compiled_truth ?? '';
+  if (page.timeline) {
+    body += '\n\n<!-- timeline -->\n\n' + page.timeline;
+  }
+
+  return lines.join('\n') + body + '\n';
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +410,7 @@ function buildFrontmatter(page: GbrainPage): string {
     `title: ${JSON.stringify(page.title)}`,
   ];
   for (const [k, v] of Object.entries(page.metadata ?? {})) {
+    if (k === 'notion_page_id' || k === 'title') continue;
     lines.push(`${k}: ${JSON.stringify(v)}`);
   }
   lines.push('---', '');
@@ -95,48 +422,113 @@ function buildFrontmatter(page: GbrainPage): string {
  * Uses Notion page_id as the gbrain slug; YAML frontmatter is composed from
  * title and metadata.
  *
+ * Routes through HTTP MCP server when GBRAIN_HTTP_URL + GBRAIN_HTTP_TOKEN
+ * are set (lock-free); falls back to CLI otherwise.
+ *
  * @param page - Page payload. `id` becomes the slug, `content` is body markdown.
  * @returns Write-summary from gbrain (slug, status, chunk count, auto-links).
  */
 export async function putPage(page: GbrainPage): Promise<PutPageResult> {
   const fullContent = buildFrontmatter(page) + page.content;
-  return runGbrain<PutPageResult>([
-    'put',
-    page.id,
-    '--content', fullContent,
-  ]);
+  if (isHttpMode()) {
+    return callMcpHttp<PutPageResult>('put_page', { slug: page.id, content: fullContent });
+  }
+  return runGbrain<PutPageResult>(['put', page.id, '--content', fullContent]);
+}
+
+/**
+ * Write a page from a verbatim full-markdown string (frontmatter + body).
+ * Unlike putPage, this does NOT regenerate frontmatter — use it to round-trip
+ * a page read via getPage after editing its frontmatter (e.g. stamping back a
+ * notion_page_id onto an agent-created page).
+ *
+ * Routes through HTTP MCP server when GBRAIN_HTTP_URL + GBRAIN_HTTP_TOKEN
+ * are set (lock-free); falls back to CLI otherwise.
+ *
+ * @param slug - gbrain slug to write under.
+ * @param fullContent - Complete markdown including the `---` frontmatter block.
+ */
+export async function putRawPage(
+  slug: string,
+  fullContent: string,
+): Promise<PutPageResult> {
+  if (isHttpMode()) {
+    return callMcpHttp<PutPageResult>('put_page', { slug, content: fullContent });
+  }
+  return runGbrain<PutPageResult>(['put', slug, '--content', fullContent]);
 }
 
 /**
  * Retrieve a single page from the gbrain knowledge graph by slug.
+ * Parses the human-readable markdown that `gbrain get` prints (no JSON mode).
  *
- * TODO Phase 2: gbrain CLI `get <slug>` prints markdown, not JSON — runGbrain's
- * JSON.parse will throw. Switch this to use raw stdout when implementing pull-back.
- *
- * @param id - The page slug (Notion page_id).
+ * @param id - The page slug.
+ * @param options - fuzzy / includeDeleted flags.
+ * @returns Parsed page detail including a locally-computed body contentHash.
  */
-export async function getPage(id: string): Promise<GbrainPage> {
-  return runGbrain<GbrainPage>(['get', id]);
+export async function getPage(
+  id: string,
+  options: GetPageOptions = {},
+): Promise<GbrainPageDetail> {
+  if (isHttpMode()) {
+    const page = await callMcpHttp<HttpGetPageResponse>('get_page', {
+      slug: id,
+      fuzzy: options.fuzzy,
+      include_deleted: options.includeDeleted,
+    });
+    return parseGbrainPage(id, serializeHttpPage(page));
+  }
+
+  const args = ['get', id];
+  if (options.fuzzy) args.push('--fuzzy');
+  if (options.includeDeleted) args.push('--include-deleted');
+  const stdout = await runGbrainRaw(args);
+  return parseGbrainPage(id, stdout);
 }
 
 /**
- * List all pages currently stored in the gbrain knowledge graph.
+ * List pages in the gbrain knowledge graph. Parses the TSV that `gbrain list`
+ * prints (`slug<TAB>type<TAB>date<TAB>title`).
  *
- * TODO Phase 2: gbrain CLI `list` defaults to human-readable output;
- * may need `--json` flag (untested) or output parsing.
+ * Note: the printed `date` is day-granular — not a precise timestamp.
  */
-export async function listPages(): Promise<GbrainPageSummary[]> {
-  const result = await runGbrain<GbrainPageSummary[] | null>(['list']);
-  return result ?? [];
+export async function listPages(
+  options: ListPagesOptions = {},
+): Promise<GbrainPageSummary[]> {
+  const args = ['list', '--limit', String(options.limit ?? 1000)];
+  if (options.updatedAfter) args.push('--updated-after', options.updatedAfter);
+  if (options.sort) args.push('--sort', options.sort);
+  if (options.includeDeleted) args.push('--include-deleted');
+
+  const stdout = await runGbrainRaw(args);
+  const pages: GbrainPageSummary[] = [];
+  for (const line of stdout.replace(/\r\n/g, '\n').split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed === 'No pages found.') continue;
+    const parts = line.split('\t');
+    if (parts.length < 4) continue;
+    pages.push({
+      slug: parts[0],
+      type: parts[1],
+      date: parts[2],
+      title: parts.slice(3).join('\t'),
+    });
+  }
+  return pages;
 }
 
 /**
- * Delete a page from the gbrain knowledge graph.
+ * Delete a page from the gbrain knowledge graph (soft-delete, 72h recovery).
+ * Routes through HTTP MCP server when configured (lock-free).
  *
- * @param id - The page slug (Notion page_id) to remove.
+ * @param id - The page slug to remove.
  */
 export async function deletePage(id: string): Promise<void> {
-  await runGbrain<void>(['delete', id]);
+  if (isHttpMode()) {
+    await callMcpHttp<unknown>('delete_page', { slug: id });
+    return;
+  }
+  await runGbrainRaw(['delete', id]);
 }
 
 /**
@@ -160,4 +552,41 @@ export async function extractLinks(
   }
   const result = await runGbrain<string[] | null>(args);
   return result ?? [];
+}
+
+/**
+ * A single hit from gbrain keyword search (the `search` MCP tool).
+ * Mirrors the JSON shape returned by gbrain v0.41 search.
+ */
+export interface SearchHit {
+  slug: string;
+  title: string;
+  type: string;
+  chunk_text: string;
+  score: number;
+}
+
+/**
+ * Keyword-search the gbrain knowledge graph and return the top hits.
+ * Always routes through the HTTP MCP server and NEVER falls back to the CLI:
+ * the long-running `gbrain serve` process holds the PGLite single-writer lock,
+ * so a concurrent CLI read would contend with it. Callers (the recall hook)
+ * must treat any thrown error as "no recall" and proceed — fail-open.
+ *
+ * Note: gbrain search is keyword-only until vector embeddings are enabled;
+ * short CJK queries frequently miss. See progress.md 卡點 #1.
+ *
+ * @param query - Free-text query (typically the user's prompt).
+ * @param limit - Max hits to return (default 3).
+ */
+export async function recall(query: string, limit = 3): Promise<SearchHit[]> {
+  if (!isHttpMode()) {
+    throw new Error(
+      'recall requires HTTP mode (GBRAIN_HTTP_URL + GBRAIN_HTTP_TOKEN). ' +
+        'CLI fallback is intentionally disabled: it would contend with the ' +
+        'PGLite single-writer lock held by `gbrain serve`.',
+    );
+  }
+  const hits = await callMcpHttp<SearchHit[]>('search', { query, limit });
+  return hits ?? [];
 }

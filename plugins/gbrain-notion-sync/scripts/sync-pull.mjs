@@ -1,9 +1,12 @@
 /**
  * sync-pull.mjs
- * One-shot Notion → gbrain pull script.
+ * One-shot Notion → gbrain pull script. Also seeds sync-state.db so the
+ * bidirectional engine (scripts/sync.mjs) has a baseline.
  *
  * Usage:
- *   node scripts/sync-pull.mjs [--database <name>] [--dry-run]
+ *   bun scripts/sync-pull.mjs [--database <name>] [--dry-run]
+ *
+ * Runs under `bun` (not node): it loads sync-state.js, which uses bun:sqlite.
  *
  * Flags:
  *   --database <name>   Target database: projects | todo | inbox | knowledge (default: all)
@@ -123,10 +126,12 @@ function extractTitle(page) {
  * @param {object}   notion     Namespace import of notion-client module
  * @param {object}   converter  Namespace import of block-converter module
  * @param {object}   adapter    Namespace import of gbrain-adapter module
+ * @param {object}   props      Namespace import of notion-properties module
+ * @param {object|null} syncState  Open SyncState handle, or null in dry-run
  * @param {boolean}  dryRun
  * @returns {Promise<void>}
  */
-async function pullDatabase(dbName, notion, converter, adapter, dryRun) {
+async function pullDatabase(dbName, notion, converter, adapter, props, syncState, dryRun) {
   const dbId = process.env[`NOTION_DB_${dbName.toUpperCase()}`];
   if (!dbId) {
     console.warn(`[sync-pull] No env var NOTION_DB_${dbName.toUpperCase()} — skipping ${dbName}`);
@@ -139,6 +144,7 @@ async function pullDatabase(dbName, notion, converter, adapter, dryRun) {
 
   for (const page of pages) {
     const title = extractTitle(page);
+    const writableProps = props.extractWritableProperties(dbName, page);
     const blockResp = await notion.fetchBlockChildren(page.id);
     const markdown = converter.blocksToMarkdown(blockResp.results);
 
@@ -146,6 +152,8 @@ async function pullDatabase(dbName, notion, converter, adapter, dryRun) {
       const lineCount = markdown.split('\n').length;
       console.log(`[DRY-RUN] ${dbName} :: ${page.id} :: "${title}"`);
       console.log(`         markdown: ${markdown.length} chars, ${lineCount} lines`);
+      const propKeys = Object.keys(writableProps);
+      console.log(`         frontmatter props: ${propKeys.length ? JSON.stringify(writableProps) : '(none)'}`);
       const preview = markdown.split('\n').slice(0, 3).join(' / ');
       if (preview) console.log(`         preview: ${preview}`);
     } else {
@@ -153,9 +161,27 @@ async function pullDatabase(dbName, notion, converter, adapter, dryRun) {
         id: page.id,
         title,
         content: markdown,
-        metadata: { source: dbName },
+        metadata: { source: dbName, ...writableProps },
       });
       console.log(`[sync-pull] Wrote ${page.id}: ${result.status} (${result.chunks} chunks)`);
+
+      if (syncState) {
+        // Record the post-write baseline so sync.mjs can detect later edits.
+        const stored = await adapter.getPage(page.id);
+        syncState.upsertPage({
+          notion_page_id: page.id,
+          notion_database: dbName,
+          local_slug: page.id,
+          last_synced_at: new Date().toISOString(),
+          notion_last_edited_seen: page.last_edited_time ?? '',
+          local_content_hash_seen: stored.contentHash,
+          notion_props_hash_seen: props.hashProps(
+            props.pickWritableKeys(dbName, stored.frontmatter),
+          ),
+          last_sync_direction: 'to_brain',
+          conflict_state: 'none',
+        });
+      }
     }
   }
 }
@@ -180,24 +206,31 @@ async function main() {
 
   // Load compiled modules (requires `bun run build` first).
   // tsconfig flattens src/ → dist/, so we import from dist/<file>.js directly.
-  let notion, converter, adapter;
+  let notion, converter, adapter, props, syncStateMod;
   try {
-    [notion, converter, adapter] = await Promise.all([
+    [notion, converter, adapter, props, syncStateMod] = await Promise.all([
       lazyImport('notion-client.js'),
       lazyImport('block-converter.js'),
       lazyImport('gbrain-adapter.js'),
+      lazyImport('notion-properties.js'),
+      lazyImport('sync-state.js'),
     ]);
   } catch (err) {
     console.error(`[sync-pull] Module load error:\n${err.message}`);
     process.exit(1);
   }
 
+  const syncState = dryRun
+    ? null
+    : syncStateMod.openSyncState(path.join(ROOT, 'sync-state.db'));
+
   console.log(`[sync-pull] Starting pull for: ${targets.join(', ')}`);
 
   for (const dbName of targets) {
-    await pullDatabase(dbName, notion, converter, adapter, dryRun);
+    await pullDatabase(dbName, notion, converter, adapter, props, syncState, dryRun);
   }
 
+  if (syncState) syncState.close();
   console.log('[sync-pull] Pull complete.');
 }
 

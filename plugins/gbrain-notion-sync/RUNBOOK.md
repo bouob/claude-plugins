@@ -263,6 +263,50 @@ powershell -ExecutionPolicy Bypass -File "$env:CLAUDE_PLUGIN_ROOT\scripts\instal
 
 ---
 
+## 雙向同步（push，Phase 2）
+
+`pull` 把 Notion 鏡射進 gbrain；`push` 把 gbrain 的本地變更回寫 Notion。push 為**手動觸發**（無自動排程）。
+
+### 前置：先 pull 建立基線
+
+`push` 倚賴 `sync-state.db` 的基線判斷「哪些頁面變過」。第一次使用前必須先 `bun run sync`（pull），它會 seed 基線。
+
+### 預覽（dry-run）
+
+```
+/notion-sync push        # → 內部先跑 push:dry
+```
+
+等同 `bun run push:dry`。印出每頁的四象限分類，不寫入任何資料：
+
+- `skip` — 兩邊都沒變
+- `to_notion` — 本地改了 → 回寫 Notion（屬性走 `pages.update`；body 僅在 Notion 頁無不支援 block 時覆寫）
+- `to_brain` — Notion 較新 → 重新整理 gbrain 頁
+- `conflict` — 雙改 → **Notion 贏**，本地版備份到 `.conflict/`，Notion 頁留 comment
+- `created` — gbrain 頁無 `notion_page_id` → 在 Notion 建新頁（僅限 Inbox / 知識庫）
+
+### 執行
+
+```
+bun run push
+```
+
+### 衝突處理
+
+```
+bun scripts/sync.mjs --conflicts
+```
+
+列出未解衝突。每筆顯示 gbrain slug、偵測時間、`.conflict/` 備份路徑。完整 audit trail 在 `~/.notion-sync/conflicts.jsonl`。手動比對備份與 Notion 現況後自行合併。
+
+### Gotchas
+
+- `pull` / `push` 都用 **`bun`** 跑（載入 `sync-state.js` → `bun:sqlite`），不可用 `node`。
+- push 不會在 Notion 新增屬性欄位或 select 選項 — 不存在的值會被略過並 warn。
+- 新頁的 `source` frontmatter 必須是 `inbox` 或 `knowledge`，否則略過（不允許 agent 建 Projects/To-Do 頁）。
+
+---
+
 ## 後處理（重整 gbrain 圖譜）
 
 `/notion-sync pull` 只做 Notion → gbrain 寫入。要重新抽取 backlinks、跑 dream consolidation、更新 vector index（如有 `OPENAI_API_KEY`），跑：
@@ -299,6 +343,161 @@ powershell -ExecutionPolicy Bypass -File "$env:CLAUDE_PLUGIN_ROOT\scripts\instal
 
 ---
 
+## HTTP Server Mode（Lock-Free Sync）
+
+### 為什麼需要
+
+`gbrain serve`（stdio MCP，Claude Code 使用）與 `gbrain put`（CLI，sync script 使用）都需要 PGLite 單寫者鎖。兩者同時執行會報 `MultiXactId has not been created yet` 或 lock timeout。
+
+解法：改用 `gbrain serve --http` 作為**唯一**的 PGLite 擁有者，Claude Code 和 sync scripts 都透過 HTTP 連線。
+
+### 遷移步驟（一次性，5-10 分鐘）
+
+**前置：關閉 Claude Code**（停止 stdio MCP server，釋放 PGLite 鎖）
+
+**Step 1：啟動 HTTP server，取得 bootstrap token**
+
+```powershell
+# 在 PowerShell 開新視窗執行（保持此視窗開著）
+gbrain serve --http --port 7432 --token-ttl 31536000
+# 輸出會包含：Admin bootstrap token: gbr_live_xxxx...
+# 記下這個 token
+```
+
+**Step 2：開啟 admin dashboard，註冊 OAuth 客戶端**
+
+1. 瀏覽 `http://localhost:7432/admin/`，貼入 bootstrap token 登入（**尾端斜線必要**，少斜線會 `Cannot GET /admin`）
+2. 點擊「Register client」
+3. 填入：
+   - Name: `notion-sync`
+   - Grant types: `client_credentials`（機器對機器）
+   - Scopes: `read` + `write`
+4. 點擊「Register」→ 複製 `client_id` 和 `client_secret`（只顯示一次）
+
+**Step 3：取得 access token**
+
+```powershell
+# 替換 CLIENT_ID 和 CLIENT_SECRET
+$response = Invoke-RestMethod -Uri "http://localhost:7432/token" `
+  -Method Post -ContentType "application/x-www-form-urlencoded" `
+  -Body "grant_type=client_credentials&client_id=CLIENT_ID&client_secret=CLIENT_SECRET"
+# Token endpoint 可用 http://localhost:7432/.well-known/oauth-authorization-server 確認
+$response.access_token
+```
+
+**Step 4：更新 `.env`**
+
+```env
+GBRAIN_HTTP_URL=http://localhost:7432
+GBRAIN_HTTP_TOKEN=<access_token from step 3>
+```
+
+**Step 5：重新設定 Claude Code MCP 使用 HTTP**
+
+```bash
+claude mcp remove gbrain
+claude mcp add gbrain -t http http://localhost:7432/mcp -H "Authorization: Bearer <access_token>"
+```
+
+**Step 6：設定開機自動啟動**
+
+```powershell
+schtasks /Create /TN "gbrain-http-server" `
+  /TR "gbrain serve --http --port 7432 --token-ttl 31536000" `
+  /SC ONLOGON /RL HIGHEST /F
+```
+
+**Step 7：重啟 Claude Code**，驗證 gbrain MCP 恢復正常。
+
+### 日常使用（設定完成後）
+
+```bash
+bun run sync          # 讀 Notion → 寫 gbrain，透過 HTTP，無 lock 衝突
+bun run sync:dry      # 預覽，不寫入
+bun run push          # gbrain 寫回 Notion，透過 HTTP
+```
+
+### Gotchas
+
+- Token TTL 到期後需重新執行 Step 3 取得新 token，並更新 `.env` + MCP config
+- `gbrain serve --http` 要在 Claude Code **之前**啟動（否則 Claude Code 連不到 HTTP server）
+- 若 `GBRAIN_HTTP_URL` 或 `GBRAIN_HTTP_TOKEN` 未設定，adapter 自動回退 CLI 模式（但有 lock 衝突風險）
+- `GBRAIN_HTTP_TOKEN` 必須填 OAuth `access_token`，**不是** bootstrap token（一次性 admin 用），也**不是** `client_secret`（`gbrain_cs_...` 開頭）；誤填 `client_secret` 會造成 `{"error":"invalid_token"}`
+- `GBRAIN_HTTP_URL` 只能填 `http://localhost:7432`，**不能**加 `/mcp`；adapter 自行呼叫 `${GBRAIN_HTTP_URL}/mcp`
+- Admin UI 必須帶尾端斜線 `http://localhost:7432/admin/`，少斜線會 `Cannot GET /admin`
+- Token endpoint 是 `/token`（不是 `/oauth/token`）；可用 `/.well-known/oauth-authorization-server` 確認
+
+---
+
+## Reinit 後的恢復流程（`gbrain reinit-pglite`）
+
+`gbrain reinit-pglite` 會清空 PGLite brain 資料（pages、embeddings），**但 OAuth client registrations 存在獨立位置，reinit 後 client credentials 仍然有效**，可直接換發新 access token。
+
+### 前置：備份 OAuth client credentials
+
+首次完成 HTTP Server Mode 設定後（Step 2 Register client），把 `client_id` 和 `client_secret` 存到安全位置：
+
+```json
+// C:\Users\victo\Downloads\notion-sync-credentials.json（已在 .gitignore）
+{
+  "clientId": "gbrain_cl_xxxx...",
+  "clientSecret": "gbrain_cs_xxxx...",
+  "name": "notion-sync"
+}
+```
+
+### 恢復步驟（reinit 後）
+
+**Step 1：換發新 access token**（使用已備份的 client credentials）
+
+```powershell
+$creds = Get-Content "C:\Users\victo\Downloads\notion-sync-credentials.json" | ConvertFrom-Json
+$response = Invoke-RestMethod -Uri "http://localhost:7432/token" `
+  -Method Post -ContentType "application/x-www-form-urlencoded" `
+  -Body "grant_type=client_credentials&client_id=$($creds.clientId)&client_secret=$($creds.clientSecret)"
+$newToken = $response.access_token
+Write-Output $newToken
+```
+
+**Step 2：更新 `~/.claude.json`（gbrain MCP token）**
+
+在 `~/.claude.json` 中找 gbrain MCP 設定，更新 `-H` 參數裡的 Bearer token：
+
+```json
+"args": ["-t", "http", "http://localhost:7432/mcp",
+         "-H", "Authorization: Bearer <新的 access_token>"]
+```
+
+**Step 3：更新 `notion-sync/.env`**
+
+```env
+GBRAIN_HTTP_TOKEN=<新的 access_token>
+```
+
+**Step 4：還原本地資料**
+
+```bash
+# 匯入本地知識庫（--no-embed 避免 OpenAI API 費用）
+gbrain put C:\path\to\myresume\ --no-embed
+
+# 從 Notion 全量 pull（還原 4 個 PAI 資料庫）
+cd notion-sync && bun run sync
+```
+
+預期結果：約 41 頁（projects 3 + todo 18 + inbox 4 + knowledge 16）
+
+**Step 5：重啟 Claude Code**（MCP 重新握手，讓新 token 生效）
+
+### Gotchas
+
+- HTTP server 必須**先啟動**才能換 token（`gbrain serve --http --port 7432 --token-ttl 31536000`）
+- Credentials 檔用 **camelCase**（`clientId` / `clientSecret`），不是 `client_id` / `client_secret`；PowerShell 取用時 `$creds.clientId`
+- Step 2 更新的是 Claude Code **MCP config**（`~/.claude.json`），Step 3 更新的是 **sync script config**（`notion-sync/.env`）；兩個都要改
+- `bun run sync` 完成後才能 `bun run push`（push 倚賴 sync-state.db 基線）
+- Reinit 後 Task Scheduler 排程不受影響，但排程觸發前記得先完成 Step 1~4
+
+---
+
 ## 故障排除
 
 | 症狀 | 可能原因 | 處理方式 |
@@ -308,3 +507,9 @@ powershell -ExecutionPolicy Bypass -File "$env:CLAUDE_PLUGIN_ROOT\scripts\instal
 | 資料庫頁面讀取失敗 | Integration 未分享給該 DB | 重新執行 Step 4 |
 | `GBRAIN_ALLOW_SHELL_JOBS not set` | 環境變數未注入 | 確認指令前綴或 `.env` 載入 |
 | `--follow` 相關錯誤 | 舊版 gbrain | 升級至 v0.34.0+ |
+| `gbrain HTTP 401` in sync log | `GBRAIN_HTTP_TOKEN` 過期，或誤填了 `client_secret` | 確認 token 不是 `gbrain_cs_...`；重新 Step 3 取 `access_token`，更新 `.env` |
+| `gbrain HTTP 503 / ECONNREFUSED` | HTTP server 未啟動 | 先啟動 `gbrain serve --http --port 7432` |
+| `MultiXactId has not been created` | CLI 寫入與 stdio MCP 衝突 | 遷移至 HTTP 模式，見上方步驟 |
+| 同步卡在第一頁（第一頁 `created_or_updated` 後無後續）| `getPage()` 回退到本機 CLI 路徑 | 確認 `gbrain-adapter.ts` build 是最新版（`bun run build`）；确認 `.env` 有 `GBRAIN_HTTP_URL` 和 `GBRAIN_HTTP_TOKEN` |
+| `Cannot GET /admin` | Admin URL 少了尾端斜線 | 改用 `http://localhost:7432/admin/` |
+

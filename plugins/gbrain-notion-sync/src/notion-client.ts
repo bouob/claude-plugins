@@ -8,9 +8,17 @@ import type {
   DatabaseObjectResponse,
   PageObjectResponse,
   BlockObjectResponse,
+  BlockObjectRequest,
   ListBlockChildrenResponse,
   QueryDatabaseResponse,
+  CreatePageParameters,
+  UpdatePageParameters,
 } from '@notionhq/client/build/src/api-endpoints.js';
+
+/** Notion property-input map (the `properties` payload of create/update). */
+export type NotionPropertyInput = Record<string, unknown>;
+/** Notion block-input shape (one entry of a `children` array). */
+export type { BlockObjectRequest };
 
 // ---------------------------------------------------------------------------
 // Rate-limit configuration
@@ -89,16 +97,34 @@ export async function fetchPage(id: string): Promise<PageObjectResponse> {
 }
 
 /**
- * Retrieve the direct block children of a block (or page) by ID.
- * Returns only the first page of results (up to 100 blocks).
- * Callers that need all blocks should implement cursor-based pagination on top.
+ * Retrieve ALL direct block children of a block (or page) by ID, following
+ * cursor pagination internally. The returned response carries the aggregated
+ * `results` with `has_more: false`.
  * @param blockId - The parent block / page UUID.
  */
 export async function fetchBlockChildren(
   blockId: string,
 ): Promise<ListBlockChildrenResponse> {
-  await rateLimit();
-  return getClient().blocks.children.list({ block_id: blockId });
+  const all: ListBlockChildrenResponse['results'] = [];
+  let cursor: string | undefined = undefined;
+  let last: ListBlockChildrenResponse | null = null;
+  do {
+    await rateLimit();
+    const resp: ListBlockChildrenResponse = await getClient().blocks.children.list({
+      block_id: blockId,
+      start_cursor: cursor,
+      page_size: 100,
+    });
+    all.push(...resp.results);
+    last = resp;
+    cursor = resp.has_more ? (resp.next_cursor ?? undefined) : undefined;
+  } while (cursor);
+  return {
+    ...(last as ListBlockChildrenResponse),
+    results: all,
+    has_more: false,
+    next_cursor: null,
+  };
 }
 
 /**
@@ -121,6 +147,102 @@ export async function queryDatabase(
     cursor = resp.has_more ? (resp.next_cursor ?? undefined) : undefined;
   } while (cursor);
   return all;
+}
+
+// ---------------------------------------------------------------------------
+// Write API (Phase 2 — push direction)
+// ---------------------------------------------------------------------------
+
+/**
+ * Patch a Notion page's properties. Non-destructive: only the supplied
+ * properties change; page body blocks are untouched.
+ * @param pageId - The Notion page UUID.
+ * @param properties - Notion property-input map (see notion-properties.ts).
+ */
+export async function updatePageProperties(
+  pageId: string,
+  properties: NotionPropertyInput,
+): Promise<PageObjectResponse> {
+  await rateLimit();
+  const response = await getClient().pages.update({
+    page_id: pageId,
+    properties: properties as UpdatePageParameters['properties'],
+  });
+  return response as PageObjectResponse;
+}
+
+/**
+ * Create a new page inside a Notion database.
+ * @param parentDatabaseId - Target database UUID.
+ * @param properties - Notion property-input map (must include the title).
+ * @param children - Optional body blocks.
+ */
+export async function createPage(
+  parentDatabaseId: string,
+  properties: NotionPropertyInput,
+  children?: BlockObjectRequest[],
+): Promise<PageObjectResponse> {
+  await rateLimit();
+  const params: CreatePageParameters = {
+    parent: { database_id: parentDatabaseId },
+    properties: properties as CreatePageParameters['properties'],
+  };
+  if (children && children.length > 0) {
+    params.children = children;
+  }
+  const response = await getClient().pages.create(params);
+  return response as PageObjectResponse;
+}
+
+/**
+ * Replace a page's body: delete every existing child block, then append the
+ * supplied blocks. NOT atomic — Notion has no set-body call. Callers should
+ * snapshot the current body before invoking this.
+ * @param pageId - The Notion page UUID.
+ * @param blocks - New body blocks.
+ */
+export async function replacePageBody(
+  pageId: string,
+  blocks: BlockObjectRequest[],
+): Promise<void> {
+  const existing = await fetchBlockChildren(pageId);
+  for (const block of existing.results) {
+    await rateLimit();
+    await getClient().blocks.delete({ block_id: block.id });
+  }
+  for (let i = 0; i < blocks.length; i += 100) {
+    await rateLimit();
+    await getClient().blocks.children.append({
+      block_id: pageId,
+      children: blocks.slice(i, i + 100),
+    });
+  }
+}
+
+/**
+ * Post a comment on a Notion page. Requires the integration's
+ * "insert content" capability — if absent the API returns 403, which is
+ * caught and logged rather than thrown (conflict handling must not abort).
+ * @returns true if the comment was posted, false if it was rejected.
+ */
+export async function createComment(
+  pageId: string,
+  text: string,
+): Promise<boolean> {
+  try {
+    await rateLimit();
+    await getClient().comments.create({
+      parent: { page_id: pageId },
+      rich_text: [{ text: { content: text } }],
+    });
+    return true;
+  } catch (err) {
+    console.warn(
+      `[notion-client] createComment failed for ${pageId} ` +
+        `(integration likely lacks insert-content capability): ${(err as Error).message}`,
+    );
+    return false;
+  }
 }
 
 /**
