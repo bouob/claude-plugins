@@ -17,8 +17,11 @@ context, existing comments, and CI summary, then reports merge risk. It does
 or submit GitHub reviews.
 
 Scope split: `/pr-review` handles **remote GitHub PRs**. Local uncommitted or
-staged diff → use `/review`. This skill is self-contained — it does not depend
-on the `pr-review-toolkit` plugin being installed.
+staged diff → use `/review`.
+
+This skill has three primary execution tiers plus one Codex compatibility path.
+The dimension checklists in Step 4 are always present so Codex / no-Agent hosts
+can run them inline without any external dependency:
 
 ## Skills Rubric
 
@@ -78,21 +81,57 @@ before reviewing so the user sees what was and was not checked.
 
 ## Step 4 — Run the Review
 
-Same review content and output schema regardless of path.
+Same output schema regardless of execution tier. Choose the highest applicable
+tier and proceed.
 
-**If the `Task` tool is available** (Claude Code): fan out one general-purpose
-subagent per active dimension, in parallel. Each Task prompt must include:
+### Tier 1 — `pr-review-toolkit` typed agents (Claude Code, toolkit installed)
 
-- the changed-file path list (so the subagent reads only relevant files, not the
-  whole repo),
+Check the available agent list in the system context. If
+`pr-review-toolkit:code-reviewer` is listed, use `Task` with `subagent_type`
+in parallel:
+
+| Typed agent (`subagent_type`) | Dimensions covered |
+|-------------------------------|--------------------|
+| `pr-review-toolkit:code-reviewer` | Code, Breaking change |
+| `pr-review-toolkit:type-design-analyzer` | Type design (if active) |
+| `pr-review-toolkit:pr-test-analyzer` | Test risk (if active) |
+| `pr-review-toolkit:silent-failure-hunter` | Error handling (if active) |
+| `pr-review-toolkit:comment-analyzer` | Comment & doc consistency (if active) |
+| Generic `Task` | Security, Secret leak (no dedicated toolkit agent for these) |
+
+Pass changed-file list + relevant diff hunks to every Task call.
+
+### Tier 2 — Generic `Task` fan-out (Claude Code, toolkit not installed)
+
+Fan out one generic `Task` per active dimension in parallel. Each prompt must
+include:
+
+- the changed-file path list (so the subagent reads only relevant files),
 - the relevant diff hunks,
-- that dimension's review checklist,
+- that dimension's checklist (from below),
 - the required finding schema (severity, `file:line`, problem, risk, fix),
 - the instruction to return findings only — no file edits, no test runs.
 
-**If the `Task` tool is not available** (Codex or any single-context host):
-review each active dimension sequentially in this context, applying the same
-checklist and schema.
+### Tier 3 — Sequential inline (Codex default or any host without `Task`)
+
+Review each active dimension in this context, applying the checklists below.
+
+### Tier 3P — Codex explicit parallel path
+
+Codex does not support Claude Code typed agents or `Task(subagent_type=...)`.
+Some Codex runtimes expose `multi_agent_v1.spawn_agent`, but that tool may only
+be used when the user explicitly asks for `parallel`, `subagents`,
+`delegation`, or equivalent wording. Do not infer permission from a normal
+`pr-review` request.
+
+When explicit parallel work is requested, spawn independent agents only for
+bounded review slices. Each spawned agent prompt must include:
+
+- the PR metadata and active dimensions it owns,
+- the changed-file path list,
+- the relevant diff hunks for its slice,
+- the required finding schema (severity, `file:line`, problem, risk, fix),
+- the instruction to return findings only — no file edits, no test runs.
 
 Per-dimension checklist anchors:
 
@@ -121,7 +160,8 @@ Per-dimension checklist anchors:
 
 ## Step 5 — Merge Findings
 
-Combine results from all dimensions (or subagents):
+Combine results from all dimensions (typed agents / generic tasks /
+Codex-spawned agents / inline):
 
 - de-duplicate findings that point at the same `file:line`,
 - calibrate severity against the table in Step 6,
@@ -176,9 +216,18 @@ only on explicit user request:
 - `gh pr diff <n>` empty or errors → retry with `gh pr diff <n> --patch`. Private
   repo access failing → run `gh auth status` to confirm login before assuming the
   PR is empty.
-- Subagents are isolated contexts — the Task prompt **must** carry the changed-
-  file path list and diff hunks. Without them each subagent re-fetches the whole
-  PR and wastes context.
+- Subagents are isolated contexts (Tier 1 and 2) — every Task call **must**
+  carry the changed-file path list and relevant diff hunks. Without them each
+  subagent re-fetches the whole PR and wastes context.
+- Tier 1 typed agents (`pr-review-toolkit:*`) have no dedicated agent for
+  Security or Secret leak — always run those two dimensions as generic Task
+  calls or inline regardless of tier.
+- Tier detection: check the system's available agent list for
+  `pr-review-toolkit:code-reviewer`. Present → Tier 1. `Task` tool exists but
+  agent not listed → Tier 2. No `Task` tool at all → Tier 3.
+- Codex compatibility: `multi_agent_v1.spawn_agent` is not a Claude Code
+  typed-agent replacement. Use it only for Tier 3P when the user explicitly asks
+  for parallel/subagent review; otherwise stay in Tier 3 sequential mode.
 - Empty `$ARGUMENTS`: `gh pr view --json number` failing means this branch has no
   PR → route to `/review`, do not fabricate a review.
 - Secret-leak `Blocking` requires high confidence the value is real. Fake keys in

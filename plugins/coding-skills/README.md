@@ -15,6 +15,8 @@ A [Claude Code plugin](https://docs.anthropic.com/en/docs/claude-code/plugins) f
 claude --plugin-dir ./coding-skills
 ```
 
+Codex hosts can still read the same `skills/` directory when installed through a compatible skills/plugin bridge, but this package remains Claude-plugin-first and does not ship a separate Codex plugin manifest.
+
 Skills: `/write`, `/fix`, `/review`, `/pr-review`, `/refactor`, `/diagnose`, `/spec`, `/decision`
 
 ## Skills
@@ -62,6 +64,7 @@ These are not shown in the `/` menu. Workflow skills instruct Claude to load the
 - **Workflow skills** use numbered steps with explicit confirmation gates — Claude won't write code until you approve the plan
 - **Methodology skills** are loaded by workflow instructions at the appropriate step (e.g., `/fix` always loads `testing`, optionally loads `principles` if the root cause is structural)
 - `disable-model-invocation: true` on workflow skills — no accidental auto-triggering
+- `/pr-review` uses Claude Code agents when available, `pr-review-toolkit` typed agents when installed, and sequential inline review on Codex by default. Codex parallel subagents are used only when explicitly requested.
 
 ## Workflow
 

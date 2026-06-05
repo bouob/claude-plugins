@@ -15,6 +15,8 @@
 claude --plugin-dir ./coding-skills
 ```
 
+Codex host 仍可在相容的 skills/plugin bridge 下讀取同一個 `skills/` 目錄，但此套件定位維持 Claude plugin 優先，不另外提供 Codex plugin manifest。
+
 Skills：`/write`、`/fix`、`/review`、`/pr-review`、`/refactor`、`/diagnose`、`/spec`、`/decision`
 
 ## Skills
@@ -62,6 +64,7 @@ Skills：`/write`、`/fix`、`/review`、`/pr-review`、`/refactor`、`/diagnose
 - **工作流程 Skills** 使用編號步驟加上明確確認關卡 — Claude 在你核准計畫前不會撰寫任何程式碼
 - **方法論 Skills** 由工作流程指令在適當步驟載入（例如 `/fix` 總是載入 `testing`，若根因涉及設計問題則額外載入 `principles`）
 - 工作流程 Skills 皆設定 `disable-model-invocation: true` — 不會意外自動觸發
+- `/pr-review` 在 Claude Code 可使用 agents；若安裝 `pr-review-toolkit`，優先使用 typed agents；Codex 預設使用 sequential inline review，只有使用者明確要求 parallel/subagents 時才使用 Codex subagents。
 
 ## 工作流程
 
