@@ -15,7 +15,7 @@ A [Claude Code plugin](https://docs.anthropic.com/en/docs/claude-code/plugins) f
 claude --plugin-dir ./coding-skills
 ```
 
-Skills: `/write`, `/fix`, `/review`, `/refactor`, `/diagnose`, `/spec`, `/decision`
+Skills: `/write`, `/fix`, `/review`, `/pr-review`, `/refactor`, `/diagnose`, `/spec`, `/decision`
 
 ## Skills
 
@@ -26,6 +26,7 @@ Skills: `/write`, `/fix`, `/review`, `/refactor`, `/diagnose`, `/spec`, `/decisi
 | `/write <feature>` | Implement a feature with TDD |
 | `/fix <bug>` | Fix a bug (diagnose → Red → Green → Refactor) |
 | `/review [--staged \| path]` | Review local changes (style, tests, architecture) |
+| `/pr-review [PR URL \| owner/repo#n]` | Static risk review of a GitHub PR (security, breaking change, secret leak, …) — read-only |
 | `/refactor [path \| module]` | Safe refactoring with smell analysis and TDD verification |
 | `/diagnose <error>` | Diagnosis only — find root cause without code changes. Also loaded by `/fix`. |
 | `/spec <feature>` | Define interface contract (Given/When/Then + TypeScript interface + invariants) |
