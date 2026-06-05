@@ -71,6 +71,22 @@ Claude creates `index.ts` files that re-export everything. Forbidden — creates
 
 ---
 
+## Code Output Format
+
+When showing code modifications, prefer unified diff over repeating full functions or files.
+
+```diff
+- const x = old();
++ const x = new();
+```
+
+Show full file/function only when:
+- Creating a new file
+- Change touches >80% of the function body
+- User explicitly requests full code
+
+---
+
 ## Completion Rubric
 
 | Check | Pass Condition |
