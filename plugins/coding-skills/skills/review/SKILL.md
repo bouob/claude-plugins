@@ -1,6 +1,6 @@
 ---
 name: review
-description: 'Review local code changes for style, test quality, and architecture. This skill should be used when the user asks to "review code", "review my changes", "check code quality", "review the diff", or wants a pre-commit code review. Not for GitHub PR review — use a dedicated PR review tool instead.'
+description: 'Review local code changes for style, test quality, and architecture. This skill should be used when the user asks to "review code", "review my changes", "check code quality", "review the diff", or wants a pre-commit code review. Not for GitHub PR review — use /pr-review instead.'
 argument-hint: [--staged | path | (empty=latest commit)]
 disable-model-invocation: true
 allowed-tools: Read, Grep, Glob,

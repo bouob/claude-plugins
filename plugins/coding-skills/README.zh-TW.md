@@ -15,7 +15,7 @@
 claude --plugin-dir ./coding-skills
 ```
 
-Skills：`/write`、`/fix`、`/review`、`/refactor`、`/diagnose`、`/spec`、`/decision`
+Skills：`/write`、`/fix`、`/review`、`/pr-review`、`/refactor`、`/diagnose`、`/spec`、`/decision`
 
 ## Skills
 
@@ -26,6 +26,7 @@ Skills：`/write`、`/fix`、`/review`、`/refactor`、`/diagnose`、`/spec`、`
 | `/write <功能描述>` | 以 TDD 方式實作功能 |
 | `/fix <錯誤描述>` | 修復錯誤（診斷 → Red → Green → Refactor） |
 | `/review [--staged \| path]` | 審查本地變更（風格、測試、架構） |
+| `/pr-review [PR URL \| owner/repo#n]` | GitHub PR 靜態風險審查（安全性、breaking change、金鑰外洩…）— 唯讀 |
 | `/refactor [path \| module]` | 安全重構，含壞味道分析與 TDD 驗證 |
 | `/diagnose <錯誤描述>` | 純診斷 — 找出根因但不動程式碼。也會被 `/fix` 載入。 |
 | `/spec <功能描述>` | 定義介面契約（Given/When/Then + TypeScript interface + 不變量） |
