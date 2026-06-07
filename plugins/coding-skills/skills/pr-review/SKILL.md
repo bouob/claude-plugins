@@ -19,9 +19,17 @@ or submit GitHub reviews.
 Scope split: `/pr-review` handles **remote GitHub PRs**. Local uncommitted or
 staged diff → use `/review`.
 
-This skill has three primary execution tiers plus one Codex compatibility path.
-The dimension checklists in Step 4 are always present so Codex / no-Agent hosts
-can run them inline without any external dependency:
+This skill has two concerns:
+
+1. The `pr-review` workflow: PR scope resolution, context collection, review
+   dimensions, read-only rules, and output schema.
+2. The execution policy: if the user explicitly asks for delegated or parallel
+   review and the current environment supports it, split the review into bounded
+   read-only slices. Otherwise run the same workflow sequentially.
+
+The review dimensions below are anchors, not a closed list. Report any
+high-confidence merge risk that is inside the PR scope, can be tied to the diff
+or surrounding code, and has a concrete `file:line`.
 
 ## Skills Rubric
 
@@ -54,21 +62,20 @@ Resolve to a single PR:
 
 - **PR URL** (`https://github.com/<owner>/<repo>/pull/<n>`) → use directly.
 - **`owner/repo#number`** → use directly.
-- **Empty** → resolve the current branch's PR: `gh pr view --json number,url`.
-  If that command fails (no PR for this branch), stop and tell the user this
-  branch has no open PR, and suggest `/review` for local changes. Do not
-  fabricate a review.
+- **Empty** → resolve the current branch's open PR using whatever GitHub access
+  the current environment provides. If no PR can be resolved for this branch,
+  stop and tell the user this branch has no open PR, and suggest `/review` for
+  local changes. Do not fabricate a review.
 
 ## Step 2 — Collect the Static Review Bundle
 
-Gather context with `gh`. Each command's purpose:
+Gather enough context to build this review bundle:
 
-- `gh pr view <n> --json title,body,state,files,baseRefName,headRefName` —
-  metadata + changed-file list.
-- `gh pr diff <n>` — base/head diff with line numbers.
-- `gh pr checks <n>` — CI/checks summary (read-only context, not a finding source).
-- `gh api repos/<owner>/<repo>/pulls/<n>/comments` — existing review threads, to
-  avoid duplicating points already raised.
+- PR metadata: title, body, state, base branch, head branch, and changed files.
+- Base/head diff with line numbers or patch hunks.
+- CI/checks summary as read-only context, not a finding source.
+- Existing review comments/threads, so the output does not duplicate points
+  already raised.
 
 If any context cannot be retrieved, note the gap explicitly in the output —
 do not review as if the bundle were complete.
@@ -81,57 +88,38 @@ before reviewing so the user sees what was and was not checked.
 
 ## Step 4 — Run the Review
 
-Same output schema regardless of execution tier. Choose the highest applicable
-tier and proceed.
+Use the same output schema regardless of execution style. Apply the active
+dimension checklists, but stay open to adjacent correctness, compatibility,
+security, or reliability risks discovered while tracing the PR.
 
-### Tier 1 — `pr-review-toolkit` typed agents (Claude Code, toolkit installed)
+### Delegated or Parallel Review
 
-Check the available agent list in the system context. If
-`pr-review-toolkit:code-reviewer` is listed, use `Task` with `subagent_type`
-in parallel:
+Use this path only when the user explicitly asks for `parallel`, `subagents`,
+`delegation`, or equivalent wording, and the current environment provides a
+supported way to delegate bounded review slices. Do not infer permission from a
+normal `pr-review` request.
 
-| Typed agent (`subagent_type`) | Dimensions covered |
-|-------------------------------|--------------------|
-| `pr-review-toolkit:code-reviewer` | Code, Breaking change |
-| `pr-review-toolkit:type-design-analyzer` | Type design (if active) |
-| `pr-review-toolkit:pr-test-analyzer` | Test risk (if active) |
-| `pr-review-toolkit:silent-failure-hunter` | Error handling (if active) |
-| `pr-review-toolkit:comment-analyzer` | Comment & doc consistency (if active) |
-| Generic `Task` | Security, Secret leak (no dedicated toolkit agent for these) |
+Choose the slice shape before delegating:
 
-Pass changed-file list + relevant diff hunks to every Task call.
+- Small or focused PR: one slice per active dimension or small dimension group.
+- Large PR: one slice per file group, such as security-related files, tests,
+  routes, data-access code, UI, or generated/config files.
 
-### Tier 2 — Generic `Task` fan-out (Claude Code, toolkit not installed)
+Each delegated slice must receive:
 
-Fan out one generic `Task` per active dimension in parallel. Each prompt must
-include:
-
-- the changed-file path list (so the subagent reads only relevant files),
+- the PR metadata and changed-file path list,
 - the relevant diff hunks,
-- that dimension's checklist (from below),
+- the dimensions or file group the slice owns,
+- the checklist anchors below,
 - the required finding schema (severity, `file:line`, problem, risk, fix),
-- the instruction to return findings only — no file edits, no test runs.
+- the instruction to return findings only — no file edits, no test runs,
+- the instruction that checklist anchors are not exhaustive; adjacent clear
+  merge risks inside PR scope should still be reported.
 
-### Tier 3 — Sequential inline (Codex default or any host without `Task`)
+### Sequential Review
 
-Review each active dimension in this context, applying the checklists below.
-
-### Tier 3P — Codex explicit parallel path
-
-Codex does not support Claude Code typed agents or `Task(subagent_type=...)`.
-Some Codex runtimes expose `multi_agent_v1.spawn_agent`, but that tool may only
-be used when the user explicitly asks for `parallel`, `subagents`,
-`delegation`, or equivalent wording. Do not infer permission from a normal
-`pr-review` request.
-
-When explicit parallel work is requested, spawn independent agents only for
-bounded review slices. Each spawned agent prompt must include:
-
-- the PR metadata and active dimensions it owns,
-- the changed-file path list,
-- the relevant diff hunks for its slice,
-- the required finding schema (severity, `file:line`, problem, risk, fix),
-- the instruction to return findings only — no file edits, no test runs.
+Use this path by default. Review each active dimension in this context, applying
+the checklist anchors below.
 
 Per-dimension checklist anchors:
 
@@ -160,8 +148,7 @@ Per-dimension checklist anchors:
 
 ## Step 5 — Merge Findings
 
-Combine results from all dimensions (typed agents / generic tasks /
-Codex-spawned agents / inline):
+Combine results from all dimensions and review slices:
 
 - de-duplicate findings that point at the same `file:line`,
 - calibrate severity against the table in Step 6,
@@ -186,14 +173,14 @@ Each finding has four lines: file:line, problem, risk, fix.
 
 ```
 [Blocking] src/api/user.ts:42
-問題：新增的權限檢查只驗證 userId，沒有驗證 tenantId。
-風險：跨 tenant 請求可能讀到不屬於自己的資料。
-建議：在查詢條件與授權檢查中同時驗證 tenantId。
+Problem: The new authorization check validates only userId and does not verify tenantId.
+Risk: Cross-tenant requests may read data that belongs to another tenant.
+Fix: Validate tenantId in both the query conditions and the authorization check.
 
 [Medium] src/lib/cache.ts:88
-問題：catch 區塊吞掉錯誤後回傳空陣列，呼叫端無法分辨「快取為空」與「讀取失敗」。
-風險：上游失敗被靜默成正常結果，問題延後爆發且難以定位。
-建議：讓 catch 重新拋出或回傳帶錯誤旗標的結果型別。
+Problem: The catch block swallows the error and returns an empty array, so callers cannot distinguish "empty cache" from "read failed".
+Risk: Upstream failures are silently converted into successful results, delaying discovery and making the issue harder to diagnose.
+Fix: Re-throw from catch or return a result type with an explicit error flag.
 ```
 
 If nothing is found, write “未發現明顯破壞風險” and list the review limitations
@@ -213,23 +200,18 @@ only on explicit user request:
 
 ## Gotchas
 
-- `gh pr diff <n>` empty or errors → retry with `gh pr diff <n> --patch`. Private
-  repo access failing → run `gh auth status` to confirm login before assuming the
-  PR is empty.
-- Subagents are isolated contexts (Tier 1 and 2) — every Task call **must**
-  carry the changed-file path list and relevant diff hunks. Without them each
-  subagent re-fetches the whole PR and wastes context.
-- Tier 1 typed agents (`pr-review-toolkit:*`) have no dedicated agent for
-  Security or Secret leak — always run those two dimensions as generic Task
-  calls or inline regardless of tier.
-- Tier detection: check the system's available agent list for
-  `pr-review-toolkit:code-reviewer`. Present → Tier 1. `Task` tool exists but
-  agent not listed → Tier 2. No `Task` tool at all → Tier 3.
-- Codex compatibility: `multi_agent_v1.spawn_agent` is not a Claude Code
-  typed-agent replacement. Use it only for Tier 3P when the user explicitly asks
-  for parallel/subagent review; otherwise stay in Tier 3 sequential mode.
-- Empty `$ARGUMENTS`: `gh pr view --json number` failing means this branch has no
-  PR → route to `/review`, do not fabricate a review.
+- Empty or unavailable full diff → try another available way to obtain patch
+  hunks or changed-file patches before assuming the PR is empty.
+- Private repo access failing → verify authentication before assuming the PR is
+  empty or inaccessible.
+- Delegated reviewers are isolated contexts — every delegated slice **must**
+  carry the PR metadata, changed-file path list, and relevant diff hunks. Without
+  that bundle, the reviewer may duplicate data collection and waste context.
+- This skill does not depend on external typed-agent toolkits. Use bounded
+  delegated review only when the user explicitly asks for it and the environment
+  supports it; otherwise run the same checklist inline.
+- Empty `$ARGUMENTS`: if the current branch has no resolvable GitHub PR, route
+  to `/review`, do not fabricate a review.
 - Secret-leak `Blocking` requires high confidence the value is real. Fake keys in
   test fixtures (`sk-test-...`, `AKIAIOSFODNN7EXAMPLE`) do not count.
 - Never list “the PR has no tests” as a finding by itself. Absence of a test run
