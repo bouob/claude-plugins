@@ -26,8 +26,6 @@ config({ path: path.join(ROOT, '.env') });
 
 const REQUIRED_KEYS = [
   'NOTION_TOKEN',
-  'ANTHROPIC_API_KEY',
-  'GBRAIN_PLUGIN_PATH',
   'NOTION_DB_PROJECTS',
   'NOTION_DB_TODO',
   'NOTION_DB_INBOX',
