@@ -1,19 +1,21 @@
 /**
  * sync.mjs
- * Bidirectional Notion <-> gbrain reconcile engine (Phase 2).
+ * One-way push: gbrain -> Notion.
  *
  * Usage:
  *   bun scripts/sync.mjs [--database <name>] [--dry-run]
  *
  * Runs under `bun` (loads sync-state.js -> bun:sqlite).
  *
- * For every gbrain page it classifies the change into one of four quadrants
- * (skip / to_notion / to_brain / conflict) by comparing the current Notion
- * and gbrain state against the sync-state baseline, then acts. Agent-created
- * gbrain pages (no notion_page_id) are created in Notion.
+ * For every gbrain page it compares the current Notion and gbrain state against
+ * the sync-state baseline and acts:
+ *   - local changed only      -> push the edit up to Notion (to_notion)
+ *   - no notion_page_id        -> create the page in Notion (created)
+ *   - Notion changed           -> skip (the Notion -> gbrain direction is `pull`)
+ *   - both changed (diverged)  -> skip + record a conflict; run `pull` to resolve
  *
- * Conflict policy: Notion wins. The local version is backed up to .conflict/
- * and a comment is posted on the Notion page. See plan.md §2.4.
+ * It never writes gbrain (that is `pull`'s job) and never overwrites a Notion
+ * page that moved ahead, so a stale local copy can't clobber newer Notion data.
  */
 
 import { config } from 'dotenv';
@@ -101,16 +103,6 @@ async function lazyImport(relPath) {
 // Small helpers
 // ---------------------------------------------------------------------------
 
-/** Extract the title plain_text from a Notion page's properties. */
-function extractTitle(page) {
-  for (const prop of Object.values(page.properties ?? {})) {
-    if (prop?.type === 'title') {
-      return prop.title?.[0]?.plain_text ?? '(untitled)';
-    }
-  }
-  return '(untitled)';
-}
-
 /** First markdown H1 of a body, or null. */
 function firstH1(body) {
   for (const line of body.split('\n')) {
@@ -197,7 +189,7 @@ async function main() {
   console.log(`[sync] gbrain: ${gbrainPages.length} pages`);
 
   const syncState = syncStateMod.openSyncState(path.join(ROOT, 'sync-state.db'));
-  const stats = { skip: 0, to_notion: 0, to_brain: 0, conflict: 0, created: 0, warn: 0, error: 0 };
+  const stats = { skip: 0, to_notion: 0, conflict: 0, created: 0, warn: 0, error: 0 };
 
   const ctx = { notion, adapter, converter, mdToNotion, props, syncState, schemas, dbIds, notionById, stats, dryRun };
 
@@ -226,7 +218,7 @@ async function main() {
   syncState.close();
   console.log(
     `[sync] Done. skip=${stats.skip} to_notion=${stats.to_notion} ` +
-      `to_brain=${stats.to_brain} conflict=${stats.conflict} created=${stats.created} ` +
+      `conflict=${stats.conflict} created=${stats.created} ` +
       `warn=${stats.warn} error=${stats.error}`,
   );
 }
@@ -236,7 +228,7 @@ async function main() {
 // ---------------------------------------------------------------------------
 
 async function handleNewPage(ctx, slug, detail, dbName) {
-  const { notion, adapter, mdToNotion, props, syncState, schemas, dbIds, stats, dryRun } = ctx;
+  const { notion, mdToNotion, props, syncState, schemas, dbIds, stats, dryRun } = ctx;
 
   if (!CREATABLE_DATABASES.includes(dbName)) {
     stats.warn++;
@@ -252,6 +244,25 @@ async function handleNewPage(ctx, slug, detail, dbName) {
   if (!title) {
     stats.error++;
     console.error(`[sync] ERROR new page ${slug} skipped — no title (frontmatter or H1)`);
+    return;
+  }
+
+  // R1 idempotency guard. handleNewPage only runs for a gbrain page that has no
+  // notion_page_id. A prior run could have created the Notion page but crashed
+  // before stamping that id back into the gbrain frontmatter — leaving the page
+  // id-less and re-creatable here, producing a DUPLICATE Notion page. If
+  // sync-state already maps this slug to a Notion page id, the create already
+  // happened: recover by re-stamping instead of creating again.
+  const prior = syncState.bySlug(slug);
+  if (prior && prior.notion_page_id) {
+    if (dryRun) {
+      console.log(`[DRY-RUN] recover (re-stamp): ${slug} -> ${prior.notion_page_id}`);
+      stats.created++;
+      return;
+    }
+    await finalizeCreatedPage(ctx, slug, detail, dbName, prior.notion_page_id);
+    stats.created++;
+    console.log(`[sync] recovered: re-stamped ${slug} -> ${prior.notion_page_id}`);
     return;
   }
 
@@ -271,29 +282,53 @@ async function handleNewPage(ctx, slug, detail, dbName) {
   }
 
   const created = await notion.createPage(dbIds[dbName], properties, blocks);
-  // Stamp the new page_id back into the gbrain page frontmatter.
-  const stamped = `---\n${detail.frontmatterRaw}\nnotion_page_id: ${created.id}\n---\n\n${detail.body}`;
-  await adapter.putRawPage(slug, stamped);
 
-  const stored = await adapter.getPage(slug);
-  syncState.upsertPage({
-    notion_page_id: created.id,
-    notion_database: dbName,
-    local_slug: slug,
-    last_synced_at: new Date().toISOString(),
-    notion_last_edited_seen: created.last_edited_time ?? '',
-    local_content_hash_seen: stored.contentHash,
-    notion_props_hash_seen: props.hashProps(props.pickWritableKeys(dbName, stored.frontmatter)),
-    last_sync_direction: 'created',
-    conflict_state: 'none',
-  });
-  syncState.deletePending(slug);
+  // Persist the slug -> notion_page_id mapping IMMEDIATELY, before the
+  // stamp/finalize steps that can fail. If finalize crashes, the next run's
+  // guard above finds this row and recovers instead of duplicating.
+  syncState.upsertPage(
+    baselineRow(
+      created.id, dbName, slug,
+      created.last_edited_time ?? '',
+      detail.contentHash,
+      props.hashProps(props.pickWritableKeys(dbName, detail.frontmatter)),
+      'created', 'none',
+    ),
+  );
+
+  await finalizeCreatedPage(ctx, slug, detail, dbName, created.id);
   stats.created++;
   console.log(`[sync] created: ${dbName} <- "${title}" (${created.id})`);
 }
 
+/**
+ * Stamp notion_page_id into the gbrain page and record the post-write baseline.
+ * Shared by the create path and the R1 crash-recovery path, so a half-finished
+ * create converges to the same final state on the next run.
+ */
+async function finalizeCreatedPage(ctx, slug, detail, dbName, notionPageId) {
+  const { adapter, props, syncState } = ctx;
+  // Precondition: the gbrain page has no notion_page_id yet (handleNewPage only
+  // runs in that case), so frontmatterRaw carries no duplicate key.
+  const stamped = `---\n${detail.frontmatterRaw}\nnotion_page_id: ${notionPageId}\n---\n\n${detail.body}`;
+  await adapter.putRawPage(slug, stamped);
+
+  const stored = await adapter.getPage(slug);
+  const notionEdited = syncState.getPage(notionPageId)?.notion_last_edited_seen ?? '';
+  syncState.upsertPage(
+    baselineRow(
+      notionPageId, dbName, slug,
+      notionEdited,
+      stored.contentHash,
+      props.hashProps(props.pickWritableKeys(dbName, stored.frontmatter)),
+      'created', 'none',
+    ),
+  );
+  syncState.deletePending(slug);
+}
+
 // ---------------------------------------------------------------------------
-// Existing page reconcile (four-quadrant)
+// Existing page reconcile (push: gbrain -> Notion, up-only)
 // ---------------------------------------------------------------------------
 
 async function reconcilePage(ctx, slug, detail, dbName, notionPageId) {
@@ -338,16 +373,34 @@ async function reconcilePage(ctx, slug, detail, dbName, notionPageId) {
     return;
   }
 
-  if (notionChanged && localChanged) {
-    await actConflict(ctx, slug, detail, dbName, notionPageId, notionPage);
-    return;
-  }
+  // Pure one-way push: gbrain -> Notion only. The Notion -> gbrain direction is
+  // `pull`'s job, so a page changed on the Notion side is left untouched here —
+  // a stale gbrain copy must never clobber a newer Notion page.
   if (notionChanged) {
-    await actToBrain(ctx, slug, dbName, notionPageId, notionPage);
+    if (localChanged) {
+      // Diverged: both sides moved since last sync. Write neither way; surface it
+      // so the user runs `pull` to refresh gbrain, then re-pushes.
+      stats.conflict++;
+      console.warn(
+        `[sync] WARN diverged: "${detail.title}" — Notion and gbrain both changed ` +
+          `since last sync. Skipped; run /notion-sync pull to refresh gbrain, then re-push.`,
+      );
+      if (!dryRun) {
+        syncState.addConflict({
+          notion_page_id: notionPageId,
+          local_slug: slug,
+          detected_at: new Date().toISOString(),
+          backup_path: '(diverged — run pull, then re-push)',
+        });
+      }
+    } else {
+      stats.skip++;
+    }
     return;
   }
-  // localChanged only
-  await actToNotion(ctx, slug, detail, dbName, notionPageId, notionPage, {
+
+  // localChanged only -> push the gbrain edit up to Notion.
+  await actToNotion(ctx, slug, detail, dbName, notionPageId, {
     bodyChanged,
     propsChanged,
     localBodyHash,
@@ -371,10 +424,10 @@ function baselineRow(id, dbName, slug, notionEdited, bodyHash, propsHash, direct
 }
 
 // ---------------------------------------------------------------------------
-// Quadrant actions
+// Push action (gbrain -> Notion)
 // ---------------------------------------------------------------------------
 
-async function actToNotion(ctx, slug, detail, dbName, notionPageId, notionPage, flags) {
+async function actToNotion(ctx, slug, detail, dbName, notionPageId, flags) {
   const { notion, converter, mdToNotion, props, syncState, schemas, stats, dryRun } = ctx;
   const { bodyChanged, propsChanged, localBodyHash, localPropsHash } = flags;
 
@@ -447,71 +500,6 @@ async function actToNotion(ctx, slug, detail, dbName, notionPageId, notionPage, 
     stats.conflict++;
   }
   stats.to_notion++;
-}
-
-async function actToBrain(ctx, slug, dbName, notionPageId, notionPage) {
-  const { stats, dryRun } = ctx;
-  console.log(`[sync] to_brain: "${extractTitle(notionPage)}"`);
-  if (dryRun) {
-    stats.to_brain++;
-    return;
-  }
-  await refreshGbrainFromNotion(ctx, slug, dbName, notionPageId, notionPage, 'to_brain', 'none');
-  stats.to_brain++;
-}
-
-async function actConflict(ctx, slug, detail, dbName, notionPageId, notionPage) {
-  const { notion, syncState, stats, dryRun } = ctx;
-  console.log(`[sync] conflict: "${detail.title}" — Notion wins`);
-  if (dryRun) {
-    stats.conflict++;
-    return;
-  }
-  const backup = backupLocal(detail, slug, 'local');
-  await refreshGbrainFromNotion(ctx, slug, dbName, notionPageId, notionPage, 'conflict', 'unresolved');
-  syncState.transaction(() => {
-    syncState.addConflict({
-      notion_page_id: notionPageId,
-      local_slug: slug,
-      detected_at: new Date().toISOString(),
-      backup_path: backup,
-    });
-  });
-  appendAuditLog({
-    type: 'dual-edit',
-    notion_page_id: notionPageId,
-    local_slug: slug,
-    backup_path: backup,
-  });
-  await notion.createComment(
-    notionPageId,
-    `[notion-sync] 偵測到雙向衝突，已採用 Notion 版本。本地版本已備份：${path.basename(backup)}`,
-  );
-  stats.conflict++;
-}
-
-/** Overwrite a gbrain page with the current Notion content + update baseline. */
-async function refreshGbrainFromNotion(ctx, slug, dbName, notionPageId, notionPage, direction, conflictState) {
-  const { notion, adapter, converter, props, syncState } = ctx;
-  const blocks = (await notion.fetchBlockChildren(notionPageId)).results;
-  const md = converter.blocksToMarkdown(blocks);
-  const writableProps = props.extractWritableProperties(dbName, notionPage);
-  await adapter.putPage({
-    id: slug,
-    title: extractTitle(notionPage),
-    content: md,
-    metadata: { source: dbName, notion_page_id: notionPageId, ...writableProps },
-  });
-  const stored = await adapter.getPage(slug);
-  syncState.upsertPage(
-    baselineRow(
-      notionPageId, dbName, slug,
-      notionPage.last_edited_time ?? '',
-      stored.contentHash,
-      props.hashProps(props.pickWritableKeys(dbName, stored.frontmatter)),
-      direction, conflictState,
-    ),
-  );
 }
 
 main().catch((err) => {

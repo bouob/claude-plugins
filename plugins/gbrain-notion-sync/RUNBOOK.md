@@ -80,8 +80,10 @@ bun link
 
    ```env
    NOTION_TOKEN=secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxx
-   GBRAIN_PLUGIN_PATH=/absolute/path/to/notion-sync
+   NOTION_DB_PROJECTS=...
+   NOTION_DB_TODO=...
+   NOTION_DB_INBOX=...
+   NOTION_DB_KNOWLEDGE=...
    ```
 
    **注意**：不要把真實 token 提交到 git（`.env` 已在 `.gitignore`）。
@@ -101,13 +103,12 @@ bun link
 
 ### Step 5 — 設定環境變數
 
-確認 `.env` 中以下三個 key 均已填入：
+確認 `.env` 中以下 key 均已填入：
 
 | 變數 | 說明 |
 |---|---|
 | `NOTION_TOKEN` | Step 3 取得的 Integration Secret |
-| `ANTHROPIC_API_KEY` | Anthropic API 金鑰 |
-| `GBRAIN_PLUGIN_PATH` | 本目錄的絕對路徑（例如 `/home/user/notion-sync`）|
+| `NOTION_DB_PROJECTS` / `_TODO` / `_INBOX` / `_KNOWLEDGE` | 四個 PAI 資料庫 ID |
 
 ---
 
@@ -172,21 +173,29 @@ gbrain doctor
 
 參考官方部署文件：https://github.com/garrytan/gbrain/blob/master/docs/mcp/DEPLOY.md
 
-範例（格式依官方文件為準）：
+目前採 **HTTP transport**（需先 `gbrain serve --http --port 7432` 在背景跑）。
+用 OAuth client_credentials 換 `access_token` 後加入：
+
+```bash
+claude mcp add --transport http --scope user gbrain \
+  http://localhost:7432/mcp --header "Authorization: Bearer <access_token>"
+```
+
+對應 `~/.claude.json` 條目：
 
 ```json
 {
   "mcpServers": {
     "gbrain": {
-      "command": "gbrain",
-      "args": ["mcp"],
-      "env": {
-        "GBRAIN_PLUGIN_PATH": "/absolute/path/to/notion-sync"
-      }
+      "type": "http",
+      "url": "http://localhost:7432/mcp",
+      "headers": { "Authorization": "Bearer <OAuth access_token>" }
     }
   }
 }
 ```
+
+（舊的 stdio `gbrain mcp` + `GBRAIN_PLUGIN_PATH` 接法已棄用——gbrain 不再 plugin-load notion-sync。）
 
 ---
 
@@ -277,13 +286,14 @@ powershell -ExecutionPolicy Bypass -File "$env:CLAUDE_PLUGIN_ROOT\scripts\instal
 /notion-sync push        # → 內部先跑 push:dry
 ```
 
-等同 `bun run push:dry`。印出每頁的四象限分類，不寫入任何資料：
+等同 `bun run push:dry`。印出每頁的分類，不寫入任何資料：
 
-- `skip` — 兩邊都沒變
-- `to_notion` — 本地改了 → 回寫 Notion（屬性走 `pages.update`；body 僅在 Notion 頁無不支援 block 時覆寫）
-- `to_brain` — Notion 較新 → 重新整理 gbrain 頁
-- `conflict` — 雙改 → **Notion 贏**，本地版備份到 `.conflict/`，Notion 頁留 comment
+- `skip` — 兩邊都沒變，或只有 Notion 端變了（下行交給 pull）
+- `to_notion` — 只有本地改了 → 回寫 Notion（屬性走 `pages.update`；body 僅在 Notion 頁無不支援 block 時覆寫）
 - `created` — gbrain 頁無 `notion_page_id` → 在 Notion 建新頁（僅限 Inbox / 知識庫）
+- `conflict` — 雙改（diverged）→ 兩邊都不寫、記為衝突；跑 `pull` 刷新 gbrain 後再 push
+
+push 是**純上行**：絕不寫 gbrain、絕不覆寫 Notion 端較新的頁。下行一律用 `pull`。
 
 ### 執行
 
@@ -307,24 +317,6 @@ bun scripts/sync.mjs --conflicts
 
 ---
 
-## 後處理（重整 gbrain 圖譜）
-
-`/notion-sync pull` 只做 Notion → gbrain 寫入。要重新抽取 backlinks、跑 dream consolidation、更新 vector index（如有 `OPENAI_API_KEY`），跑：
-
-```
-/notion-sync postprocess
-```
-
-內部執行：
-
-1. `gbrain extract links --source notion`
-2. `gbrain dream --dry-run`
-3. （若 `OPENAI_API_KEY` 存在）`gbrain embed --stale`
-
-每步失敗不擋下一步。Exit code：全成功 0；部分失敗 1；fatal 2。
-
----
-
 ## 健康檢查
 
 排查問題時跑：
@@ -333,8 +325,8 @@ bun scripts/sync.mjs --conflicts
 /notion-sync doctor
 ```
 
-七項檢查（順序）：
-1. `.env` 存在且 7 個必要 key 都有值
+檢查項目（順序）：
+1. `.env` 存在且 5 個必要 key（NOTION_TOKEN + 4 個 DB ID）都有值
 2. `dist/` build artifact 存在
 3. `gbrain` CLI 在 PATH 上且 `gbrain doctor` exit 0
 4. `gbrain put --help` 成功（CLI 對齊驗證）

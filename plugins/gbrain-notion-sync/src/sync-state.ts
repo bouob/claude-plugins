@@ -3,7 +3,7 @@
  * bun:sqlite-backed store for the Notion <-> gbrain sync baseline.
  *
  * Tracks, per page, what Notion and gbrain looked like at the last successful
- * sync so the four-quadrant engine (scripts/sync.mjs) can classify changes.
+ * sync so the push engine (scripts/sync.mjs) can classify changes.
  *
  * Three tables:
  *   - pages          synced pages (keyed by Notion page_id)
