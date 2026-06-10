@@ -1,8 +1,8 @@
 # Subagent Decision Tree
 
-When a task arrives, decide between three execution shapes: inline, single subagent, or
-parallel via Agent Teams. The choice shapes context budget, wall-clock time, and
-recoverability.
+When a task arrives, decide between four execution shapes: inline, single subagent,
+parallel via a dynamic workflow, or parallel via Agent Teams (legacy). The choice
+shapes context budget, wall-clock time, and recoverability.
 
 ## Decision Tree
 
@@ -15,9 +15,13 @@ Is the task <10k tokens of work AND its result is needed for the very next step?
           ├── NO  → Single subagent
           └── YES → continue
                 │
-                Is CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 set?
-                  ├── YES → Agent Teams (parallel teammates)
-                  └── NO  → Sequential subagents (note the fallback in output)
+                Is the Workflow tool available? (Claude Code >= 2.1.154, workflows enabled)
+                  ├── YES → Dynamic workflow (up to 16 concurrent agents, background, resumable)
+                  └── NO  → continue
+                        │
+                        Is CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 set?
+                          ├── YES → Agent Teams (parallel teammates, legacy)
+                          └── NO  → Sequential subagents (note the fallback in output)
 ```
 
 ## Inline
@@ -44,9 +48,29 @@ Explore subagent, get back a summary, main context stays clean.
 **Cost**: subagent spinup time (a few seconds) + its own token consumption. Net
 beneficial for any non-trivial isolation.
 
-## Agent Teams (Parallel)
+## Dynamic Workflow (Parallel, preferred)
 
-**Use when**: 2+ tasks have no dependency on each other AND Agent Teams is enabled.
+**Use when**: 2+ independent tasks AND the `Workflow` tool is available
+(Claude Code ≥ 2.1.154, dynamic workflows enabled on a paid plan).
+
+A workflow is a JS script the runtime executes in the background: `agent()`
+spawns subagents (with per-agent `model`), `parallel()` runs up to 16
+concurrently, and intermediate results live in script variables — the main
+session's context only receives the final return value. Runs are pausable
+and resumable, and loops/retries are deterministic code instead of
+turn-by-turn orchestration.
+
+**Cost shape**: same subagent tokens as Agent Teams, but near-zero main-context
+overhead — the orchestrator doesn't absorb every intermediate result.
+
+**Caveats**: no mid-run user input (anything needing confirmation goes before
+launch or after return); workflow agents run `acceptEdits` and inherit the
+tool allowlist — unallowed Bash can still prompt mid-run.
+
+## Agent Teams (Parallel, legacy fallback)
+
+**Use when**: 2+ tasks have no dependency on each other AND workflows are
+unavailable AND Agent Teams is enabled.
 
 **Verify availability** before claiming parallel:
 ```bash

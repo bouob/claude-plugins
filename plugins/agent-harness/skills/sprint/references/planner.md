@@ -54,6 +54,17 @@ Tasks with dependencies go into `sequential_tasks`, ordered by dependency chain.
 Write the file to `{WORKSPACE}/sprint-plan.md`, following the schema exactly.
 Do not modify sprint-meta.json — the orchestrator manages its status.
 
+## Step 5 — Structured Return (workflow backend only)
+
+If you were invoked with a structured-output schema (workflow backend),
+ALSO return the task list as JSON matching that schema: `tasks[]` (each
+with `id`, `title`, `type`, `model`, `effort`, `depends_on`,
+`acceptance_criteria`), `parallel_batch[]`, `sequential_tasks[]`.
+
+The file is the durable record; your structured return drives the
+scheduler. **They must agree** — same task IDs, same batching, same
+model/effort assignments.
+
 ## Gotchas
 
 - Do NOT write implementation details (no code, no file paths, no library names)

@@ -1,6 +1,6 @@
 {
   "name": "agent-harness",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Multi-agent sprint harness for Codex: plan-first Planner/Generator/Evaluator workflows with explicit subagent delegation.",
   "author": {
     "name": "Victor",

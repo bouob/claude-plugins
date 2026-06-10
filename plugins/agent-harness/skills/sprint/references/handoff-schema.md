@@ -19,6 +19,13 @@ All agents read and write these files. Format must be followed exactly.
 
 `status` values: `running` | `done` | `blocked`
 
+Write responsibilities (no other writer):
+- **Main session** writes `status: "running"` at workspace init, and the
+  terminal `"done"` / `"blocked"` after the sprint finishes
+- **Evaluator agent** bumps `iteration` on a FAIL verdict (on the
+  workflow backend the script has no filesystem access); it never
+  touches `status`
+
 ---
 
 ## sprint-plan.md
@@ -33,7 +40,7 @@ All agents read and write these files. Format must be followed exactly.
 
 ### TASK-001: [title]
 - **type**: code | write | research | collect
-- **model**: opus | sonnet | haiku
+- **model**: fable | opus | sonnet | haiku
 - **effort**: low | medium | high | xhigh | max
 - **depends_on**: [] or [TASK-002, TASK-003]
 - **acceptance_criteria**:
@@ -110,3 +117,44 @@ PASS | FAIL
 ```
 
 `status` per criterion: `PASS` | `FAIL` | `SKIP` (if task was BLOCKED)
+
+---
+
+## Structured Returns (workflow backend)
+
+On the dynamic-workflow backend, the Planner and Evaluator are invoked
+with a `schema` option and must ALSO return structured JSON. The files
+above remain the canonical, durable record; the structured return drives
+the script's scheduling. **File and return must agree.**
+
+Planner return shape (mirrors sprint-plan.md):
+
+```json
+{
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "...",
+      "type": "code",
+      "model": "sonnet",
+      "effort": "medium",
+      "depends_on": [],
+      "acceptance_criteria": ["Returns 200 on valid input"]
+    }
+  ],
+  "parallel_batch": ["TASK-001"],
+  "sequential_tasks": ["TASK-002"]
+}
+```
+
+Evaluator return shape (mirrors sprint-eval.md):
+
+```json
+{
+  "overall": "FAIL",
+  "retry_tasks": [
+    { "id": "TASK-002", "criterion": "Renders without console errors" }
+  ],
+  "notes": "optional free-form summary"
+}
+```

@@ -10,7 +10,11 @@ You do not implement — you verify.
 
 ## Step 1 — Read the Contract
 
-The sprint plan and all progress files are provided above in your prompt under "Sprint Artifacts".
+The sprint plan and all progress files are provided above in your prompt
+under "Sprint Artifacts" — OR, on the workflow backend, your Assignment
+gives you the `{WORKSPACE}` path and you read `sprint-plan.md`,
+`sprint-progress-summary.md`, and every file under `sprint-progress/`
+from disk yourself.
 Extract each task and its acceptance criteria from sprint-plan.md.
 Each task's actual output is in the corresponding progress file.
 
@@ -38,10 +42,22 @@ Write the file to `{WORKSPACE}/sprint-eval.md`.
 Include `retry_tasks` with the IDs of tasks that have at least one FAIL criterion.
 Set overall status: PASS only if zero FAILs. FAIL otherwise.
 
-## Step 4 — Update sprint-meta.json
+## Step 4 — Update sprint-meta.json (iteration only)
 
-- All PASS: set `status` to `done`
-- Any FAIL: leave `status` as `running` (orchestrator will decide on retry)
+- Never touch the `status` field — the orchestrator's main session owns
+  the `running` → `done` / `blocked` transitions
+- On the workflow backend, if your overall verdict is FAIL and your
+  Assignment says this is not the final iteration: update the
+  `iteration` field in `{WORKSPACE}/sprint-meta.json` to the value your
+  Assignment specifies
+- On the fallback backend, do not modify sprint-meta.json at all
+
+## Step 5 — Structured Return (workflow backend only)
+
+If you were invoked with a structured-output schema, ALSO return JSON:
+`{overall: "PASS" | "FAIL", retry_tasks: [{id, criterion}], notes}`.
+The file is the durable record; your structured return drives the retry
+loop. **sprint-eval.md and your return must agree.**
 
 ## Gotchas
 
