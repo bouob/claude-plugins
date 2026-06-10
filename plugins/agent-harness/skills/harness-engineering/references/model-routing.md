@@ -1,15 +1,18 @@
 # Model + Effort Routing Table
 
 Route each task to the cheapest model + lowest effort that meets the quality bar.
-Reserve Opus for work that genuinely needs its reasoning depth; default to Sonnet;
-use Haiku only for mechanical work where synthesis isn't required. Effort dials
-in reasoning depth independently of model choice.
+Reserve Fable 5 / Opus for work that genuinely needs their reasoning depth; default
+to Sonnet; use Haiku only for mechanical work where synthesis isn't required.
+Effort dials in reasoning depth independently of model choice.
+
+Current lineup (2026-06): Fable 5 (`fable` — 1M context, adaptive thinking,
+~2× Opus price), Opus 4.8 (`opus`), Sonnet 4.6 (`sonnet`), Haiku 4.5 (`haiku`).
 
 ## Primary Routing Table
 
 | Task type | Model | Effort | Why | Cost note |
 |---|---|---|---|---|
-| `plan` | Opus | high | Architectural decomposition, dependency reasoning, acceptance-criteria authoring | High; one Planner per sprint amortizes |
+| `plan` | Opus (or Fable 5) | high | Architectural decomposition, dependency reasoning, acceptance-criteria authoring | High; one Planner per sprint amortizes. Fable 5 when decomposition quality dominates — ~2× Opus cost |
 | `evaluate` | Opus or Sonnet | medium | Verifying against acceptance criteria; Opus when judgment is non-trivial, Sonnet when checks are mechanical | Medium |
 | `code` | Sonnet | medium | Implementation, debugging, test writing | Medium |
 | `write` | Sonnet | low | Long-form prose, documentation, structured reports | Medium |
@@ -29,6 +32,10 @@ in reasoning depth independently of model choice.
 Effort is orthogonal to model: `haiku/high` is cheaper than `opus/low` but the
 ceiling is bounded by the model's capability. Prefer scaling effort up on a
 capable model before reaching for a more expensive model.
+
+**Fable 5 exception**: Fable 5 uses adaptive thinking and budgets its own
+reasoning depth — effort keywords have limited effect on `fable`-routed
+roles. Treat the `effort` field there as advisory.
 
 ## When to Override
 
@@ -57,9 +64,16 @@ short translations, format conversions.
 
 ## Orchestrator Model
 
-The orchestrator (the main session running this skill) is typically Opus when you need
-1M context to hold the plan + all progress files + eval simultaneously. Sonnet works for
-smaller orchestrations (≤7 tasks, ≤200k total context).
+The orchestrator's model is whatever the user selected via `/model` — the plugin
+never sets it. **Fable 5 (1M context) is the natural orchestrator** when the
+sprint state (plan + all progress files + eval) must be held simultaneously;
+Opus 4.8 also works. Sonnet suffices for smaller orchestrations (≤7 tasks,
+≤200k total context).
+
+On the workflow backend this matters less: intermediate results stay inside
+the workflow run's script variables, and the orchestrator's context only
+receives the final verdict — so even a Sonnet main session can drive a large
+sprint without context pressure.
 
 The orchestrator runs `agent-harness` itself; subagents inherit their role's model from
 the routing table above.
@@ -92,9 +106,11 @@ back to the table above (Opus planner at high effort, Sonnet generator/evaluator
 medium effort, Haiku collect at low effort).
 
 `/sprint` reads `effort` per role from the config and injects the corresponding keyword
-at the top of each subagent prompt. This is a workaround for Claude Code's `Agent` tool
-not yet accepting `effort` at invocation time — the schema is forward-compatible with
-native effort support whenever it lands.
+at the top of each subagent prompt — on both backends. This is a workaround for the
+fact that neither Claude Code's `Agent` tool nor the dynamic-workflow runtime's
+`agent()` hook accepts `effort` at invocation time (both accept only `model`,
+including `fable`) — the schema is forward-compatible with native effort support
+whenever it lands.
 
 Note: this override mechanism applies only to `/sprint`. The `/harness-engineering` skill
 treats this table as advisory — it's a reference for designing harnesses, not a runtime

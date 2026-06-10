@@ -4,7 +4,7 @@
 
 A dual-host agent workflow package for multi-agent orchestration.
 
-- **Claude Code**: plugin commands for autonomous Planner -> Generator -> Evaluator sprints with parallel Agent Teams and iterative feedback loops.
+- **Claude Code**: plugin commands for autonomous Planner -> Generator -> Evaluator sprints, executed as background dynamic workflows (up to 16 parallel agents) with iterative feedback loops.
 - **Codex**: plugin skills for plan-first sprints with explicit subagent delegation, optional per-role routing, and Codex lifecycle hooks.
 
 ## Install
@@ -110,12 +110,19 @@ reasoning role (and `low` for `collect`), which is a safe default across
 subscription tiers and API plans. The wizard lets users with Opus access
 upgrade Planner quality (Opus at `high` effort) or choose lower-cost routing.
 
-Each role accepts a `model` (`opus` / `sonnet` / `haiku`) and an `effort`
-(`low` / `medium` / `high` / `xhigh` / `max`). Effort is injected as a
+Each role accepts a `model` (`fable` / `opus` / `sonnet` / `haiku`) and an
+`effort` (`low` / `medium` / `high` / `xhigh` / `max`). Effort is injected as a
 prompt-level keyword (`Think.`, `Think hard.`, `Think harder.`, `Ultrathink.`)
-at the top of each subagent prompt — a workaround for Claude Code's `Agent`
-tool not yet accepting `effort` at invocation time. The schema is
-forward-compatible with native effort whenever Anthropic ships it.
+at the top of each subagent prompt — a workaround for neither Claude Code's
+`Agent` tool nor the workflow runtime's `agent()` hook accepting `effort` at
+invocation time. The schema is forward-compatible with native effort whenever
+Anthropic ships it.
+
+Notes on `fable` (Claude Fable 5): adaptive thinking makes the effort keyword
+advisory; pricing is ~2× Opus 4.8; restricted topics silently fall back to
+Opus 4.8. The config routes subagents only — the orchestrator (main session)
+model is whatever you pick via `/model`; Fable 5's 1M context makes it a good
+orchestrator for large sprints.
 
 Schema: `skills/sprint/references/config-schema.md`.
 
@@ -148,12 +155,19 @@ Schema: `codex/references/codex-config-schema.md`.
 ```text
 /sprint <spec>
   -> Initialize workspace (.sprint/<timestamp>/)
-  -> Planner (model from your config) writes sprint-plan.md
-  -> Generators implement tasks in parallel or sequence
-  -> Aggregate progress files
-  -> Evaluator (model from your config) writes sprint-eval.md
-  -> Retry failed tasks when needed
+  -> Launch a background dynamic workflow (Claude Code >= 2.1.154):
+       Planner (model from your config) writes sprint-plan.md
+       Generators implement tasks in parallel (up to 16 concurrent)
+       Aggregate progress files
+       Evaluator (model from your config) writes sprint-eval.md
+       Retry failed tasks (up to 3 iterations) inside the run
+  -> Main session receives only the final verdict and reports
 ```
+
+Intermediate results stay inside the workflow run — the main session's
+context holds only the final report. When dynamic workflows are unavailable
+(older Claude Code, or disabled), `/sprint` falls back to orchestrating the
+same phases turn-by-turn with the `Agent` tool.
 
 ### Codex
 
@@ -194,6 +208,10 @@ on cheaper models where appropriate:
 | Generator research | `sonnet` + `high` |
 | Generator collect | `haiku` + `low` |
 
+Users with Claude Fable 5 access can pick the `frontier` preset instead,
+which upgrades the Planner to `fable` + `high` (~2× the Opus planner cost)
+and keeps every other role identical to `full-access`.
+
 ### Codex
 
 Codex routing supports both inherit and explicit route shapes.
@@ -218,7 +236,8 @@ inherit-mode routing for the current run.
 ### Claude Code
 
 - Claude Code on any subscription tier or API plan
-- Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) for maximum parallelism
+- Claude Code v2.1.154+ with dynamic workflows enabled for parallel execution
+  (the legacy `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` path works as fallback)
 - Playwright MCP (optional) for live UI verification in the Evaluator phase
 
 ### Codex
@@ -244,7 +263,8 @@ Skip step 1 only when the spec is already concrete and low-risk.
 | v0.3.x -> v0.5.x | Multi-host experiment with older Codex / Auggie adapters | Reverted |
 | v0.6.0 | Claude Code-only simplification, schema v3 for Claude routing | Released |
 | v2.2.1 | Dual-host package with separate Codex adapter | Released |
-| v2.3.0 | Per-role reasoning effort (low/medium/high/xhigh/max) for Claude, schema v4 | Current |
+| v2.3.0 | Per-role reasoning effort (low/medium/high/xhigh/max) for Claude, schema v4 | Released |
+| v2.5.0 | Workflow-backed sprint orchestration, `fable` (Claude Fable 5) routing, `frontier` preset | Current |
 
 Codex support is intentionally separate from the Claude `/sprint` runtime. The
 Codex adapter keeps its own config files, skills, and hooks rather than mixing

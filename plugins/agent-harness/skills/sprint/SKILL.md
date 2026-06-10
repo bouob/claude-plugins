@@ -2,10 +2,11 @@
 name: sprint
 description: >
   Autonomous multi-agent sprint: Planner decomposes spec → Generators implement in parallel
-  via Agent Teams → Evaluator verifies against acceptance criteria → iterates up to 3 times.
+  via a Claude Code dynamic workflow (Agent-tool fallback when workflows are unavailable)
+  → Evaluator verifies against acceptance criteria → iterates up to 3 times.
   Use when spec requires 3+ distinct tasks or multi-step implementation across files or domains.
   Do NOT use for: single-file edits, quick bug fixes, or tasks completable in one context window.
-allowed-tools: Read, Write, Bash, Glob, Grep, Agent, TodoWrite, TodoRead
+allowed-tools: Read, Write, Bash, Glob, Grep, Agent, Workflow, TodoWrite, TodoRead
 argument-hint: "[product spec — 1 to 4 sentences describing what to build]"
 hooks:
   - event: PreToolUse
@@ -42,13 +43,16 @@ concrete deliverable, clear acceptance) can skip plan mode and run
 - `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/sprint-contract.schema.md` —
   artifact schema for sprint-meta / plan / progress / eval files
 - `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/planner.md` — Planner
-  role prompt (Phase 2)
+  role prompt
 - `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/generator.md` —
-  Generator role prompt (Phase 3)
+  Generator role prompt
 - `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/evaluator.md` —
-  Evaluator role prompt (Phase 5)
+  Evaluator role prompt
 - `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/handoff-schema.md` —
   inter-phase handoff schema
+- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/agent-fallback.md` —
+  legacy Agent-tool orchestration (used when dynamic workflows are
+  unavailable)
 
 ---
 
@@ -75,6 +79,10 @@ defaults backfill anything nobody set.
 For each Read attempt, treat ENOENT (file not found) as `{}` — never
 error on missing config.
 
+Valid `model` values: `fable` / `opus` / `sonnet` / `haiku`. The config
+routes **subagents only** — the orchestrator (this session) keeps the
+model the user selected via `/model`.
+
 ### Auto-lift legacy schemas (v1 / v2 / v3 → v4)
 
 `config-schema.md` § Migration documents the lift rules. Briefly:
@@ -95,10 +103,20 @@ Role-defaulted effort during lift:
 
 Write the lifted v4 back to the same path so subsequent reads are fast.
 
+### Step 0b — Load role prompts
+
+Read these files now and hold their full text in memory — both backends
+need them:
+
+- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/planner.md` → PLANNER_CONTENT
+- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/generator.md` → GENERATOR_CONTENT
+- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/evaluator.md` → EVALUATOR_CONTENT
+- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/handoff-schema.md` → SCHEMA_CONTENT
+
 ### Hold resolved values in scope
 
-- `{planner_model}`, `{planner_effort}` — substituted into Phase 2b
-- `{evaluator_model}`, `{evaluator_effort}` — substituted into Phase 5b
+- `{planner_model}`, `{planner_effort}`
+- `{evaluator_model}`, `{evaluator_effort}`
 - `{generator_routing_table}` — a 4-row markdown table built from
   `models.generator.{code,write,research,collect}` with columns
   `type | model | effort | when to use`. Use the schema doc text:
@@ -107,11 +125,12 @@ Write the lifted v4 back to the same path so subsequent reads are fast.
   - `research` — synthesizing multiple sources, connecting concepts
   - `collect` — fetching data, format conversion, file discovery
 
-### Effort keyword mapping (used in Phases 2 / 3 / 5)
+### Effort keyword mapping
 
-The orchestrator injects this keyword at the **top** of every subagent
-prompt, before any other content. This is how reasoning effort is
-delivered until Claude Code's `Agent` tool accepts `effort` natively.
+Reasoning effort is delivered by injecting this keyword at the **top**
+of every subagent prompt, before any other content — on both backends.
+Neither Claude Code's `Agent` tool nor the workflow runtime's `agent()`
+hook accepts `effort` at invocation time; both accept only `model`.
 
 | `effort` value | Keyword to inject |
 |---|---|
@@ -124,6 +143,9 @@ delivered until Claude Code's `Agent` tool accepts `effort` natively.
 Define `{effort_keyword(role_or_type)}` as: look up the role/type's
 `effort` value, then map via the table above. Empty string for `low`.
 
+Note: roles routed to `fable` (Claude Fable 5) use adaptive thinking —
+the keyword has limited effect there. Inject it anyway for consistency.
+
 ### Defaults & hints
 
 **Built-in defaults (no config file)**: every reasoning role uses
@@ -133,8 +155,8 @@ and API plan — `/sprint` runs without model-access errors.
 **Print this hint when running with built-in defaults** (no config file
 at any layer):
 > "Using safe defaults (all Sonnet, medium effort). Planner quality is
-> better with Opus + high effort — run /agent-harness:init to upgrade
-> if you have Opus access."
+> better with Opus or Fable 5 + high effort — run /agent-harness:init
+> to upgrade if you have access."
 
 **Plan-mode tip** — print on Phase 0 finish (always):
 > "Tip: ambiguous spec? Plan mode often catches mis-understandings
@@ -143,9 +165,9 @@ at any layer):
 ### When the spawn would fail
 
 If `{planner_model}` resolves to a model the user lacks access to
-(e.g. `opus` without Opus subscription), Phase 2's subagent spawn
-will fail at first turn. Recover by re-running `/agent-harness:init`
-and selecting an accessible preset.
+(e.g. `opus` without Opus subscription, or `fable` without Fable 5
+access), the Planner spawn will fail at first turn. Recover by
+re-running `/agent-harness:init` and selecting an accessible preset.
 
 ---
 
@@ -153,8 +175,14 @@ and selecting an accessible preset.
 
 Create the sprint workspace directory: `.sprint/<timestamp>/`
 where `<timestamp>` is the current UTC time in format `YYYYMMDD-HHmmss`.
+Compute the timestamp and the ISO `started_at` value **now, in this
+session** — the workflow script cannot call `Date.now()` (it throws
+inside workflow scripts), so these values travel into the workflow via
+`args`.
 
-If `.sprint/` is not already listed in `.gitignore`, append the line `.sprint/` to `.gitignore`.
+If `.sprint/` is not already listed in `.gitignore`, append the line
+`.sprint/` to `.gitignore`. This must happen here, before any agent
+writes artifacts — never delegate it to a subagent.
 
 Write `.sprint/<timestamp>/sprint-meta.json`:
 ```json
@@ -168,206 +196,286 @@ Write `.sprint/<timestamp>/sprint-meta.json`:
 }
 ```
 
-All subsequent sprint files go inside `.sprint/<timestamp>/`. Reference this path as `{workspace}` in later phases.
+All subsequent sprint files go inside `.sprint/<timestamp>/`. Reference
+this path as `{workspace}` in later phases — always the **relative**
+path (`.sprint/<timestamp>`), never an absolute Windows path (backslashes
+read as escape noise inside agent prompts).
 
 ---
 
-## Phase 2 — Planner
+## Phase 2 — Select Backend and Launch
 
-Step 2a: Read these files and hold their full text in memory:
-- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/planner.md` → PLANNER_CONTENT
-- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/handoff-schema.md` → SCHEMA_CONTENT
+### Step 2a — Backend check
 
-Step 2b: Spawn a subagent (model: {planner_model}) with a prompt assembled from these parts in order:
+If the `Workflow` tool is available in the current tool set (Claude Code
+≥ 2.1.154 with dynamic workflows enabled): use the **workflow backend**
+(Step 2b). Invoking it from this skill counts as user opt-in — `/sprint`
+may call `Workflow` directly.
 
-```
-{effort_keyword(planner) — single line, e.g. "Think hard." Omit entirely if planner_effort is low.}
+If the `Workflow` tool is absent, or the launch is rejected/disabled:
+print
+> "Dynamic workflows unavailable — using Agent-tool fallback."
 
-{PLANNER_CONTENT — paste full text}
+then execute `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/agent-fallback.md`
+(Phases 2–6 run in this session), and on completion continue at Phase 4
+of this file (skip the meta-status updates the fallback already did).
 
----
+### Step 2b — Assemble `args`
 
-## Handoff Schema (reference)
+Build a single JSON object for the workflow's `args` input. Passing all
+variable content through `args` (instead of pasting it into the script
+source) avoids JS string-escaping bugs and keeps the script body stable
+for `resumeFromRunId`:
 
-{SCHEMA_CONTENT — paste full text}
-
----
-
-## Resolved Model Routing Table (assigned by orchestrator for this sprint)
-
-{generator_routing_table — paste the 4-row table built in Phase 0; columns are type | model | effort | when to use}
-
----
-
-## Your Assignment
-
-SPEC: {$ARGUMENTS verbatim}
-WORKSPACE: {workspace}
-
-Write `{workspace}/sprint-plan.md` following the sprint-plan.md schema exactly.
-Use the Resolved Model Routing Table above to assign each task's `model` AND
-`effort` fields based on its `type`.
-After writing the file, output exactly: PLANNER DONE
-```
-
-Wait for the subagent to complete before proceeding.
-
-Read `{workspace}/sprint-plan.md`. Verify it exists and contains both `parallel_batch` and `sequential_tasks` sections.
-If the file is missing or malformed: stop and report to user — do not continue with a broken plan.
-
----
-
-## Phase 3 — Generator (maximize parallelism)
-
-Read `{workspace}/sprint-plan.md` to extract `parallel_batch` and `sequential_tasks`.
-
-Step 3a: Read these files and hold their full text in memory:
-- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/generator.md` → GENERATOR_CONTENT
-- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/handoff-schema.md` → SCHEMA_CONTENT (reuse from Phase 2 if still available)
-
-For every Generator subagent, build the prompt using this template. Look up
-the task's `effort` value from `sprint-plan.md` and map to a keyword before
-spawning:
-
-```
-{effort_keyword(task.effort) — single line for this specific task. Omit entirely if low.}
-
-{GENERATOR_CONTENT — paste full text}
-
----
-
-## Handoff Schema (reference)
-
-{SCHEMA_CONTENT — paste full text}
-
----
-
-## Sprint Plan
-
-{sprint-plan.md full content}
-
----
-
-## Your Assignment
-
-TASK_ID: {task-id}
-WORKSPACE: {workspace}/
-
-Find your TASK_ID in the Sprint Plan above and implement it.
-Write your output to `{workspace}/sprint-progress/{task-id}.md` following the sprint-progress schema.
+```json
+{
+  "spec": "<$ARGUMENTS verbatim>",
+  "workspace": ".sprint/<timestamp>",
+  "maxIterations": 3,
+  "plannerModel": "<planner_model>",
+  "plannerEffort": "<planner_effort>",
+  "evaluatorModel": "<evaluator_model>",
+  "evaluatorEffort": "<evaluator_effort>",
+  "routingTable": "<generator_routing_table markdown>",
+  "plannerContent": "<PLANNER_CONTENT>",
+  "generatorContent": "<GENERATOR_CONTENT>",
+  "evaluatorContent": "<EVALUATOR_CONTENT>",
+  "schemaContent": "<SCHEMA_CONTENT>"
+}
 ```
 
-Step 3b: Check Agent Teams availability:
-```bash
-echo $CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
+Pass `args` as a real JSON object in the Workflow tool call — not a
+JSON-encoded string.
+
+### Step 2c — Launch the workflow
+
+Call the `Workflow` tool with the script template below, adapted only
+if the runtime reports an API difference. Authoring rules (violating
+any of these breaks the run or its resumability):
+
+1. `export const meta = {...}` first, **pure literal** — no variables,
+   no interpolation.
+2. Build every prompt by **string concatenation** (`a + '\n' + b`).
+   **Never** use backtick template literals to embed role-prompt content
+   — the markdown contains backticks and `${`-shaped text that
+   terminates or interpolates the literal.
+3. **No `Date.now()`, `Math.random()`, or argless `new Date()`** —
+   they throw inside workflow scripts. Timestamps come from `args`.
+4. The script has no filesystem access — every file read/write happens
+   inside an agent. Agents receive the `{workspace}` path and read the
+   artifacts themselves.
+
+```js
+export const meta = {
+  name: 'sprint-pge',
+  description: 'Planner -> parallel Generators -> Evaluator sprint with retry loop',
+  phases: [
+    { title: 'Plan', detail: 'decompose spec into tasks' },
+    { title: 'Generate', detail: 'implement tasks in parallel' },
+    { title: 'Aggregate', detail: 'summarize progress files' },
+    { title: 'Evaluate', detail: 'verify acceptance criteria' },
+  ],
+}
+
+const EFFORT_KEYWORD = { low: '', medium: 'Think.', high: 'Think hard.', xhigh: 'Think harder.', max: 'Ultrathink.' }
+function withEffort(effort, body) {
+  const kw = EFFORT_KEYWORD[effort] || ''
+  return kw ? kw + '\n\n' + body : body
+}
+
+const PLAN_SCHEMA = {
+  type: 'object',
+  required: ['tasks', 'parallel_batch', 'sequential_tasks'],
+  properties: {
+    tasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'title', 'type', 'model', 'effort', 'depends_on', 'acceptance_criteria'],
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          type: { enum: ['code', 'write', 'research', 'collect'] },
+          model: { enum: ['fable', 'opus', 'sonnet', 'haiku'] },
+          effort: { enum: ['low', 'medium', 'high', 'xhigh', 'max'] },
+          depends_on: { type: 'array', items: { type: 'string' } },
+          acceptance_criteria: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+    parallel_batch: { type: 'array', items: { type: 'string' } },
+    sequential_tasks: { type: 'array', items: { type: 'string' } },
+  },
+}
+
+const EVAL_SCHEMA = {
+  type: 'object',
+  required: ['overall', 'retry_tasks'],
+  properties: {
+    overall: { enum: ['PASS', 'FAIL'] },
+    retry_tasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'criterion'],
+        properties: { id: { type: 'string' }, criterion: { type: 'string' } },
+      },
+    },
+    notes: { type: 'string' },
+  },
+}
+
+phase('Plan')
+const plannerPrompt = withEffort(args.plannerEffort,
+  args.plannerContent
+  + '\n\n---\n\n## Handoff Schema (reference)\n\n' + args.schemaContent
+  + '\n\n---\n\n## Resolved Model Routing Table (assigned by orchestrator for this sprint)\n\n' + args.routingTable
+  + '\n\n---\n\n## Your Assignment\n\nSPEC: ' + args.spec
+  + '\nWORKSPACE: ' + args.workspace
+  + '\n\nWrite `' + args.workspace + '/sprint-plan.md` following the sprint-plan.md schema exactly.'
+  + '\nUse the Resolved Model Routing Table above to assign each task\'s `model` AND `effort` fields based on its `type`.'
+  + '\nYour structured return must agree with the file: the file is the record, the return drives scheduling.')
+
+const plan = await agent(plannerPrompt, { label: 'planner', phase: 'Plan', model: args.plannerModel, schema: PLAN_SCHEMA })
+if (!plan || !plan.tasks || !plan.tasks.length) {
+  return { overall: 'ERROR', reason: 'Planner returned no tasks', iteration: 1, workspace: args.workspace }
+}
+
+const taskById = {}
+for (const t of plan.tasks) taskById[t.id] = t
+
+function generatorPrompt(task, evalNotes) {
+  let body = args.generatorContent
+    + '\n\n---\n\n## Handoff Schema (reference)\n\n' + args.schemaContent
+    + '\n\n---\n\n## Sprint Plan (structured)\n\n' + JSON.stringify(plan.tasks, null, 2)
+    + '\n\n---\n\n## Your Assignment\n\nTASK_ID: ' + task.id
+    + '\nWORKSPACE: ' + args.workspace + '/'
+    + '\n\nFind your TASK_ID in the Sprint Plan above and implement it.'
+    + '\nRead `' + args.workspace + '/sprint-plan.md` for full plan context.'
+    + '\nWrite your output to `' + args.workspace + '/sprint-progress/' + task.id + '.md` following the sprint-progress schema.'
+    + '\nDo NOT run git commit or git push.'
+  if (evalNotes) {
+    body += '\n\n---\n\n## Previous Evaluation (what failed and why)\n\n' + evalNotes
+  }
+  return withEffort(task.effort, body)
+}
+
+let iteration = 1
+let parallelIds = plan.parallel_batch || []
+let sequentialIds = plan.sequential_tasks || []
+let evalNotes = ''
+let verdict = null
+
+while (true) {
+  log('Iteration ' + iteration + ': ' + (parallelIds.length + sequentialIds.length) + ' task(s)')
+  await parallel(parallelIds.map(id => () =>
+    agent(generatorPrompt(taskById[id], evalNotes), { label: id, phase: 'Generate', model: taskById[id].model })))
+  for (const id of sequentialIds) {
+    await agent(generatorPrompt(taskById[id], evalNotes), { label: id, phase: 'Generate', model: taskById[id].model })
+  }
+
+  await agent('Read every file under `' + args.workspace + '/sprint-progress/` and write `'
+    + args.workspace + '/sprint-progress-summary.md` listing each task ID, its status (DONE or BLOCKED), and a one-sentence summary.',
+    { label: 'aggregate', phase: 'Aggregate', model: 'haiku' })
+
+  const evalPrompt = withEffort(args.evaluatorEffort,
+    args.evaluatorContent
+    + '\n\n---\n\n## Handoff Schema (reference)\n\n' + args.schemaContent
+    + '\n\n---\n\n## Your Assignment\n\nWORKSPACE: ' + args.workspace + '/'
+    + '\nITERATION: ' + iteration + ' of ' + args.maxIterations
+    + '\n\nRead `' + args.workspace + '/sprint-plan.md`, `' + args.workspace + '/sprint-progress-summary.md`,'
+    + ' and every file under `' + args.workspace + '/sprint-progress/`.'
+    + '\nWrite `' + args.workspace + '/sprint-eval.md` following the sprint-eval.md schema exactly.'
+    + '\nIf your overall verdict is FAIL and this is not the final iteration, update the `iteration` field in `'
+    + args.workspace + '/sprint-meta.json` to ' + (iteration + 1) + '. Do not touch the `status` field.'
+    + '\nYour structured return must agree with sprint-eval.md: the file is the record, the return drives scheduling.')
+  verdict = await agent(evalPrompt, { label: 'evaluator', phase: 'Evaluate', model: args.evaluatorModel, schema: EVAL_SCHEMA })
+
+  if (!verdict || verdict.overall === 'PASS' || iteration >= args.maxIterations) break
+
+  const retryIds = (verdict.retry_tasks || []).map(r => r.id).filter(id => taskById[id])
+  if (!retryIds.length) break
+  iteration = iteration + 1
+  parallelIds = retryIds.filter(id => !(taskById[id].depends_on || []).length)
+  sequentialIds = retryIds.filter(id => (taskById[id].depends_on || []).length)
+  evalNotes = JSON.stringify(verdict, null, 2)
+}
+
+return {
+  overall: verdict ? verdict.overall : 'ERROR',
+  iteration: iteration,
+  retry_tasks: verdict ? (verdict.retry_tasks || []) : [],
+  tasks: plan.tasks.map(t => t.id),
+  workspace: args.workspace,
+}
 ```
 
-### If output is non-empty (Agent Teams available):
-
-For each task ID in `parallel_batch`, spawn a **teammate** simultaneously in a single message (one Agent tool call per task, all in the same turn).
-Wait for ALL teammates to complete before proceeding.
-
-### If output is empty (Agent Teams NOT available):
-
-For each task ID in `parallel_batch`, spawn a **subagent** sequentially — one task at a time, wait for each to finish.
-Note in output: "Agent Teams not available — parallel_batch running sequentially."
-
-### Sequential tasks (all cases):
-
-For each task ID in `sequential_tasks` (in listed order):
-- Spawn one subagent using the prompt template above
-- Wait for completion before spawning the next
+Wait for the workflow to complete. Its return value is the only thing
+that lands in this session's context — all intermediate progress stays
+inside the run.
 
 ---
 
-## Phase 4 — Aggregate
+## Phase 3 — Inside the Workflow (for reference)
 
-Read all `{workspace}/sprint-progress/*.md` files.
-Write `{workspace}/sprint-progress-summary.md` listing each task ID, status (DONE/BLOCKED), and one-sentence summary.
+The script above implements the same P-G-E contract as the fallback
+path:
 
----
-
-## Phase 5 — Evaluator
-
-Step 5a: Read these files and hold their full text in memory:
-- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/evaluator.md` → EVALUATOR_CONTENT
-- `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/handoff-schema.md` → SCHEMA_CONTENT
-- `{workspace}/sprint-plan.md` → PLAN_CONTENT
-- `{workspace}/sprint-progress-summary.md` → SUMMARY_CONTENT
-- All `{workspace}/sprint-progress/*.md` → PROGRESS_FILES (labelled by task ID)
-
-Step 5b: Spawn a subagent (model: {evaluator_model}) with a prompt assembled from these parts:
-
-```
-{effort_keyword(evaluator) — single line, e.g. "Think." Omit entirely if evaluator_effort is low.}
-
-{EVALUATOR_CONTENT — paste full text}
-
----
-
-## Handoff Schema (reference)
-
-{SCHEMA_CONTENT — paste full text}
+- **Plan**: one Planner agent ({planner_model}) writes
+  `{workspace}/sprint-plan.md` AND returns the structured task list that
+  drives scheduling. Dual-channel rule: the file is the durable record,
+  the structured return drives control flow — they must agree.
+- **Generate**: `parallel_batch` runs via `parallel()` (true concurrency,
+  up to 16 agents — no Agent Teams flag needed); `sequential_tasks` run
+  in listed order. Each Generator gets its task's `model` and
+  effort keyword.
+- **Aggregate**: one Haiku agent writes `{workspace}/sprint-progress-summary.md`.
+- **Evaluate**: the Evaluator ({evaluator_model}) reads the workspace
+  artifacts, writes `{workspace}/sprint-eval.md`, returns
+  `{overall, retry_tasks}`, and on FAIL bumps `iteration` in
+  `sprint-meta.json` (the script has no filesystem access, so the agent
+  owns this write).
+- **Retry loop**: on FAIL with iterations remaining, only `retry_tasks`
+  re-enter Generate, with the previous eval verdict appended to their
+  prompts.
 
 ---
 
-## Sprint Artifacts
+## Phase 4 — Post-Workflow Wrap-Up
 
-### sprint-plan.md
-{PLAN_CONTENT}
+Read the workflow's return value `{overall, iteration, retry_tasks, tasks, workspace}`.
+Read `{workspace}/sprint-eval.md` and `{workspace}/sprint-progress-summary.md`
+for report detail.
 
-### sprint-progress-summary.md
-{SUMMARY_CONTENT}
-
-### Progress Files
-{Each PROGRESS_FILES entry, labelled with its task ID}
-
----
-
-## Your Assignment
-
-WORKSPACE: {workspace}/
-
-Write `{workspace}/sprint-eval.md` following the sprint-eval.md schema exactly.
-After writing the file, output exactly: EVALUATOR DONE
-```
-
-Wait for the subagent to complete.
-
----
-
-## Phase 6 — Decision Gate
-
-Read `{workspace}/sprint-eval.md`.
-Read `{workspace}/sprint-meta.json` fresh (do not rely on in-memory state from earlier phases).
-
-### If overall status is PASS:
+### If overall is PASS:
 1. Update `{workspace}/sprint-meta.json` → `status: "done"`
 2. Report to user: summary of what was built, files changed, eval results
-3. Done.
 
-### If overall status is FAIL and `iteration < max_iterations`:
-1. Increment `{workspace}/sprint-meta.json` → `iteration`
-2. Extract `retry_tasks` from `{workspace}/sprint-eval.md`
-3. Update `{workspace}/sprint-plan.md` → move `retry_tasks` into a new `parallel_batch` (if no deps) or `sequential_tasks`
-4. Return to Phase 3 with only the retry tasks
-   — append `{workspace}/sprint-eval.md` content to each Generator prompt so they know what failed and why
-
-### If overall status is FAIL and `iteration >= max_iterations`:
+### If overall is FAIL (iterations exhausted):
 1. Update `{workspace}/sprint-meta.json` → `status: "blocked"`
-2. Report to user:
-   - Which criteria failed
-   - What was attempted across all iterations
-   - Specific next steps the user should take manually
+2. Report to user: which criteria failed, what was attempted across all
+   iterations, and specific next steps to take manually
+
+### If overall is ERROR (planner or evaluator died):
+1. Update `{workspace}/sprint-meta.json` → `status: "blocked"`
+2. Report the reason; suggest re-running `/sprint` (a rejected model
+   spawn usually means the config names a model the account lacks —
+   re-run `/agent-harness:init`)
+
+The terminal `status` write is always done **here, by the main session**
+— never by a workflow agent. While `status` is `"running"`, the
+PreToolUse hook blocks `git push`; this wrap-up is what unblocks it.
 
 ---
 
-## Phase 7 — Post-Sprint Actions (only if spec requested any)
+## Phase 5 — Post-Sprint Actions (only if spec requested any)
 
-After Phase 6 reports done, if `sprint-plan.md` Interpretation lists any
+After Phase 4 reports done, if `sprint-plan.md` Interpretation lists any
 "out-of-orchestrator scope" items the user expects performed (e.g. "push to
 GitHub when done", "open in browser"), the orchestrator handles them with a
-destructive-action gate:
+destructive-action gate. These run **after** the workflow returns — a
+workflow cannot pause for user input, so nothing inside the script ever
+asks for confirmation.
 
 1. **Classify each item**:
    - **Destructive** (modifies shared / production / external systems): push to main,
@@ -394,7 +502,7 @@ destructive-action gate:
 ## Output Example
 
 ```
-Sprint complete — Iteration 1
+Sprint complete — Iteration 1 (workflow backend)
 
 Built:
   TASK-001  Login page with email/password fields     PASS
@@ -402,27 +510,31 @@ Built:
   TASK-003  Session persistence (7-day cookie)        PASS
 
 Files changed: 6 files, +312 lines
-Workspace: .sprint/20260427-143022/
+Workspace: .sprint/20260610-143022/
 ```
 
 ---
 
 ## Gotchas
 
-- Phase 0 reads model + effort config from `~/.claude/agent-harness.json` (user-level) and `./.claude/agent-harness.local.json` (project override). Missing config falls back to all-Sonnet/medium-effort — safe across every tier, but Planner quality is better with Opus + high effort
-- Users with Opus access should run `/agent-harness:init` and pick `full-access` to upgrade Planner to Opus. Without that, /sprint still works on Sonnet, just with slightly lower planning quality
-- **Effort is delivered via prompt-level keyword injection** (`Think hard.`, `Ultrathink.`, etc.) because Claude Code's `Agent` tool currently does not accept `effort` at invocation time — only `model`. Frontmatter `effort` works on statically-defined agents but not on dynamic Agent spawns used here. When Anthropic extends the tool, /sprint will switch to native effort transparently
-- The effort keyword goes at the **very top** of every subagent prompt (before role content). For `effort: low`, omit the line entirely — do not inject an empty string or a "no thinking" marker
-- Workspace path is `.sprint/<timestamp>/` — all handoff files live there, not in the project root
-- Phases 2, 3, and 5 embed full file content into each Agent prompt string — cold-start agents cannot read files they were not given; never pass a file path as a substitution for file content
-- Phase 3 generators also receive the full `sprint-plan.md` content in their prompt — they do not need separate Read access to it
-- If Agent Teams is not available, `parallel_batch` runs sequentially — note this in output but do not abort the sprint
-- Generator subagents must NOT commit or push — the PreToolUse hook blocks `git push` during any active sprint
-- If Phase 2 produces a malformed `sprint-plan.md` (missing `parallel_batch` or `sequential_tasks`): stop and report to user rather than continuing
-- `sprint-meta.json` is the source of truth for iteration count — always read it fresh at the start of Phase 6, never use a cached value
-- When retrying, Generators receive both the original `sprint-plan.md` AND the failed `sprint-eval.md` so they know exactly what failed and why
-- `.sprint/` is gitignored — sprint artifacts are local-only by default; do not commit them
+- Phase 0 reads model + effort config from `~/.claude/agent-harness.json` (user-level) and `./.claude/agent-harness.local.json` (project override). Missing config falls back to all-Sonnet/medium-effort — safe across every tier
+- Valid models are `fable` / `opus` / `sonnet` / `haiku`. `fable` (Claude Fable 5) needs Fable access on the account and costs ~2× Opus 4.8; it also silently falls back to Opus 4.8 on restricted topics. Users with Opus or Fable access should run `/agent-harness:init` and pick `full-access` or `frontier`
+- The config routes subagents only — the orchestrator's model is whatever the user picked via `/model`. A Fable 5 main session (1M context) pairs well with Sonnet/Haiku-routed subagents
+- **Effort is delivered via prompt-level keyword injection** (`Think hard.`, `Ultrathink.`, etc.) on both backends: neither the `Agent` tool nor the workflow `agent()` hook accepts `effort` — only `model`. The keyword goes at the very top of the prompt; for `effort: low`, omit the line entirely
+- Fable 5 uses adaptive thinking — effort keywords have limited effect on `fable`-routed roles; treat their `effort` field as advisory
+- **Workflow script authoring**: prompts by string concatenation only — never embed role-prompt markdown in backtick template literals (backticks and `${`-shaped text break the literal). All variable content travels via `args`
+- **No `Date.now()` / `Math.random()` / argless `new Date()` in the script** — they throw (they would break resume). The workspace timestamp and `started_at` are computed in Phase 1 and passed via `args`
+- Workflow subagents run in `acceptEdits` mode and inherit your tool allowlist — Bash commands outside the allowlist (e.g. `npm test`, build commands) still prompt mid-run with nobody watching. Before a long sprint, allowlist the build/test commands the Generators will need
+- A workflow cannot ask the user anything mid-run — clarifications belong in plan mode before `/sprint`, and the destructive-action gate (Phase 5) runs after the workflow returns
+- `parallel()` runs at most 16 agents concurrently; larger batches queue automatically. Planner guidance already caps practical batch size well below this
+- **If a workflow run is stopped or crashes, `sprint-meta.json` stays `"status": "running"` and the hook keeps blocking `git push`.** Recover by resuming the run (`/workflows` → resume, or relaunch with `resumeFromRunId`) or by manually setting `status` to `"blocked"`
+- Workspace path is `.sprint/<timestamp>/` — always relative; never put absolute Windows paths (backslashes) into agent prompts
+- `.sprint/` is gitignored in Phase 1 by the main session — never delegated to an agent; sprint artifacts are local-only by default, do not commit them
+- On the workflow backend, agents receive the `{workspace}` path and read artifacts themselves (the script has no filesystem access). On the fallback backend, the orchestrator pastes full file content into prompts — see `agent-fallback.md`
+- Generator subagents must NOT commit or push — the prompt forbids it and the PreToolUse hook blocks `git push` during any active sprint
+- `sprint-meta.json` write responsibilities: main session writes `"running"` (Phase 1) and the terminal `"done"` / `"blocked"` (Phase 4); the Evaluator agent bumps `iteration` on FAIL. No other writer
+- If the Planner returns no tasks or a malformed plan, the script returns `overall: "ERROR"` — report to user rather than continuing
+- When retrying, Generators receive the structured plan AND the failed eval verdict so they know exactly what failed and why
 - If spec mentions a target folder (e.g. "build under sprint/foo/"), Planner will overwrite existing files in that folder by default — Interpretation must explicitly state "existing files at <path> will be overwritten; if you intended to keep them, abort and rerun with `do not overwrite existing files in <path>` in the spec"
-- **v0.7.0 added per-role `effort` (reasoning level).** Schema is now v4: each role is `{model, effort}`. v1 / v2 / v3 configs auto-lift on first read with role-defaulted effort values. v2 configs with engine != "claude" still abort the lift and force re-init.
-- v0.3.0 added `references/sprint-contract.schema.md` (artifact schema). v0.4.x – v0.5.x experimented with multi-host (Codex / Auggie) but those tracks were rolled back in v0.6.0 — `references/engine-flag-matrix.md`, `references/cross-host-deployment.md`, and `references/model-registry.md` were removed along with the `adapters/` and `templates/` directories.
-- Plan-mode tip is printed by Phase 0 every run. Users running automated sprints can ignore it; users with vague specs should heed it before launching the workspace.
+- **v2.5.0 moved orchestration to the dynamic-workflow backend** (Claude Code ≥ 2.1.154). The Agent-tool path including the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` check survives only in `references/agent-fallback.md`. v0.7.0 added per-role `effort` (schema v4; v1 / v2 / v3 auto-lift). v0.4.x–v0.5.x multi-host (Codex / Auggie) was rolled back in v0.6.0
+- Plan-mode tip is printed by Phase 0 every run. Users running automated sprints can ignore it; users with vague specs should heed it before launching the workspace

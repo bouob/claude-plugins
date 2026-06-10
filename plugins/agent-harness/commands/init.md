@@ -50,7 +50,22 @@ without reading JSON.
 
 Options (display text → internal preset → preview content):
 
-### Option 1 — `All models — Opus, Sonnet, Haiku` → `full-access`
+### Option 1 — `Fable 5 + all models` → `frontier`
+preview:
+```
+| Role                | Model  | Effort |
+|---------------------|--------|--------|
+| Planner             | Fable  | high   |
+| Evaluator           | Sonnet | medium |
+| Generator (code)    | Sonnet | medium |
+| Generator (write)   | Sonnet | low    |
+| Generator (research)| Sonnet | high   |
+| Generator (collect) | Haiku  | low    |
+
+Note: Fable 5 planner costs ~2x the Opus planner.
+```
+
+### Option 2 — `All models — Opus, Sonnet, Haiku` → `full-access`
 preview:
 ```
 | Role                | Model  | Effort |
@@ -63,7 +78,7 @@ preview:
 | Generator (collect) | Haiku  | low    |
 ```
 
-### Option 2 — `Sonnet + Haiku (no Opus access)` → `no-opus`
+### Option 3 — `Sonnet + Haiku (no Opus access)` → `no-opus`
 preview:
 ```
 | Role                | Model  | Effort |
@@ -76,7 +91,7 @@ preview:
 | Generator (collect) | Haiku  | low    |
 ```
 
-### Option 3 — `Sonnet only` → `sonnet-only`
+### Option 4 — `Sonnet only` → `sonnet-only`
 preview:
 ```
 | Role                | Model  | Effort |
@@ -89,7 +104,7 @@ preview:
 | Generator (collect) | Sonnet | low    |
 ```
 
-### Option 4 — `Custom — let me pick each role` → `custom`
+### Option 5 — `Custom — let me pick each role` → `custom`
 preview:
 ```
 You'll be asked 5 follow-up questions:
@@ -105,8 +120,8 @@ You'll be asked 5 follow-up questions:
 Skip this step unless the user picked `custom`. Otherwise ask each in
 order via `AskUserQuestion`.
 
-Questions 1-4 — model selection. Options for every question are `opus`,
-`sonnet`, `haiku`:
+Questions 1-4 — model selection. Options for every question are `fable`,
+`opus`, `sonnet`, `haiku`:
 
 1. "Which model for the Planner role?" → `models.planner.model`
 2. "Which model for the Evaluator role?" → `models.evaluator.model`
@@ -171,6 +186,7 @@ from Step 3).
 
 | Preset | planner | evaluator | gen.code | gen.write | gen.research | gen.collect |
 |---|---|---|---|---|---|---|
+| `frontier` | fable/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | haiku/low |
 | `full-access` | opus/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | haiku/low |
 | `no-opus` | sonnet/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | haiku/low |
 | `sonnet-only` | sonnet/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | sonnet/low |
@@ -269,3 +285,11 @@ After writing, tell the user:
   stays the same
 - `max` effort is intentionally not in any preset — reserve it for one-off
   hand-edits when you genuinely need ultrathink on a specific role
+- `fable` (Claude Fable 5) uses adaptive thinking — the injected effort
+  keyword has limited effect on fable-routed roles; the `effort` field
+  there is advisory. Fable also costs ~2× Opus 4.8 ($10/$50 per Mtok)
+  and silently falls back to Opus 4.8 on restricted topics
+  (cybersecurity, bio/chem) — behavior and cost change without an error
+- This config routes **subagents only** — the orchestrator (main
+  session) model is whatever the user picked via `/model`. Suggest
+  Fable 5 there for big sprints (1M context), not in this config

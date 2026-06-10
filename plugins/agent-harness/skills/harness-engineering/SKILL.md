@@ -5,8 +5,8 @@ description: >
   pattern (Anthropic Engineering, 2026-04-04). Use when a task exceeds one context window,
   benefits from parallel subagents, needs Playwright MCP browser-level verification, or
   requires sprint-contract negotiation between Generator and Evaluator. Also use when
-  routing work across Opus (orchestration/eval) / Sonnet (generation) / Haiku (collection),
-  deciding spawn-vs-inline-vs-Agent-Teams, designing context reset vs compaction handoffs,
+  routing work across Fable 5/Opus (orchestration/eval) / Sonnet (generation) / Haiku (collection),
+  deciding inline-vs-subagent-vs-workflow, designing context reset vs compaction handoffs,
   or reviewing whether a knowledge unit belongs in a hook, skill, rule, reference, or
   prompt. Do NOT use for: single-file edits, simple Q&A, or work that /sprint already
   templates end-to-end.
@@ -94,21 +94,23 @@ See `references/model-routing.md`. Quick rule:
 | Work | Model |
 |---|---|
 | Plan, evaluate, architectural judgment | Opus |
+| Frontier-scale planning, 1M-context synthesis | Fable 5 (~2× Opus cost) |
 | Code, write, research synthesize | Sonnet |
 | Collect, transform, fetch | Haiku |
 
 Override only with reason in the plan.
 
-### Step 5 — Decide Subagent vs Inline vs Agent Teams
+### Step 5 — Decide Inline vs Subagent vs Workflow
 
 See `references/subagent-decision.md`. Summary:
 
 - **Inline**: <10k tokens AND result needed for next step
 - **Single subagent**: isolation needed OR result can wait
-- **Agent Teams (parallel)**: 2+ independent tasks AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
-
-Verify Agent Teams via `echo $CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` before assuming
-parallelism. Empty → fall back to sequential and note it.
+- **Dynamic workflow**: 2+ independent tasks on Claude Code ≥ 2.1.154 — up to 16
+  concurrent agents, background execution, resumable, intermediate results stay
+  out of the main context
+- **Agent Teams** (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`): legacy parallel
+  path; use only when workflows are unavailable
 
 ### Step 6 — Execute / Advise / Review
 
@@ -153,8 +155,8 @@ Report the matched mode and the prescribed fix from `anti-patterns.md`.
 
 - Mode classification is not optional — Execute, Design, Route, Diagnose have different procedures
 - Cold-start agents have no context — embed task text, criteria, handoff data in the prompt; never pass a file path alone unless the agent is told what to read and what to extract
-- Agent Teams check via `echo $CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`; empty → sequential fallback (note it, don't abort)
-- Opus 1M context is for the orchestrator (main session), not subagents — subagent budgets are normal
+- Prefer dynamic workflows for parallel fan-out (Claude Code ≥ 2.1.154); the Agent Teams env-var check (`echo $CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`) is the legacy path — empty → sequential fallback (note it, don't abort)
+- Fable 5's 1M context is for the orchestrator (main session, via `/model`), not subagents — subagent budgets are normal. On the workflow backend even a Sonnet orchestrator stays lean (intermediate results live in the run, not the main context)
 - Evaluator must NOT be the same agent that did the work — Anthropic's data shows tuning a standalone skeptical Evaluator is far more tractable than making a Generator critical of its own work
 - Sprint-contract criteria need hard thresholds (numbers / boolean checks), not aesthetic judgments — without thresholds, FAIL/PASS becomes negotiable and Shallow Testing creeps in
 - "Context reset" (clear window + structured handoff) ≠ "compaction" (summarize in place); reset is the cure for Context Anxiety on Sonnet, Opus 4.6+ tolerates compaction better
@@ -169,8 +171,8 @@ Report the matched mode and the prescribed fix from `anti-patterns.md`.
 ## References
 
 - `references/pattern.md` — Anthropic 2026-04-04 P-G-E architecture: roles, sprint contracts, Playwright MCP, context reset vs compaction
-- `references/model-routing.md` — Opus/Sonnet/Haiku routing with cost reasoning
-- `references/subagent-decision.md` — Inline vs subagent vs Agent Teams decision tree, OODA-loop framing
+- `references/model-routing.md` — Fable 5/Opus/Sonnet/Haiku routing with cost reasoning
+- `references/subagent-decision.md` — Inline vs subagent vs workflow decision tree, OODA-loop framing
 - `references/durability.md` — Harness Engineering philosophy, 5-Layer architecture, hook/skill/rule/reference decision tree
 - `references/anti-patterns.md` — 9 canonical harness failure modes with matched fixes
 

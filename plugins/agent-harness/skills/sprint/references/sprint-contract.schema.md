@@ -77,7 +77,7 @@ Tasks with no dependencies — safe to spawn simultaneously.
 
 #### TASK-001
 - **type**: code | write | research | collect
-- **model**: opus | sonnet | haiku
+- **model**: fable | opus | sonnet | haiku
 - **effort**: low | medium | high | xhigh | max
 - **summary**: <one sentence>
 - **acceptance**: <which AC-N this task satisfies>

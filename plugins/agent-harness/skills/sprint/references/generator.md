@@ -38,6 +38,9 @@ provided above in your prompt under "Handoff Schema".
 
 ## Gotchas
 
+- You may be running inside a dynamic workflow (background, `acceptEdits`
+  mode). The rules are identical either way: implement your task, write
+  your progress file, never push
 - Work only on your assigned task — do not touch other tasks or files outside your scope
 - If you run out of context window before finishing: write what you completed, set status BLOCKED, note exactly where you stopped
 - Do NOT commit or push — the orchestrator manages git
