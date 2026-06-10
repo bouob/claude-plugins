@@ -12,7 +12,7 @@
     {
       "name": "agent-harness",
       "source": "./plugins/agent-harness",
-      "description": "Multi-agent harness for Claude Code: Planner→Generator→Evaluator sprints with parallel Agent Teams, harness-engineering framework for design/diagnosis, and Anthropic 2026-04-04 P-G-E pattern.",
+      "description": "Multi-agent harness for Claude Code: Planner→Generator→Evaluator sprints executed as background dynamic workflows (Agent-tool fallback), fable/opus/sonnet/haiku model routing with per-role reasoning effort, harness-engineering framework for design/diagnosis, and Anthropic 2026-04-04 P-G-E pattern.",
       "keywords": [
         "multi-agent",
         "orchestration",
@@ -22,7 +22,7 @@
         "planner",
         "generator",
         "evaluator",
-        "agent-teams",
+        "workflows",
         "autonomous",
         "p-g-e",
         "context-engineering",
