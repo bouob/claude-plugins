@@ -6,18 +6,20 @@ to Sonnet; use Haiku only for mechanical work where synthesis isn't required.
 Effort dials in reasoning depth independently of model choice.
 
 Current lineup (2026-06): Fable 5 (`fable` — 1M context, adaptive thinking,
-~2× Opus price), Opus 4.8 (`opus`), Sonnet 4.6 (`sonnet`), Haiku 4.5 (`haiku`).
+~2× Opus price), Mythos 5 (`mythos` — Fable-class with cyber safeguards
+lifted, **Project Glasswing accounts only**, not general API), Opus 4.8
+(`opus`), Sonnet 4.6 (`sonnet`), Haiku 4.5 (`haiku`).
 
 ## Primary Routing Table
 
 | Task type | Model | Effort | Why | Cost note |
 |---|---|---|---|---|
-| `plan` | Opus (or Fable 5) | high | Architectural decomposition, dependency reasoning, acceptance-criteria authoring | High; one Planner per sprint amortizes. Fable 5 when decomposition quality dominates — ~2× Opus cost |
-| `evaluate` | Opus or Sonnet | medium | Verifying against acceptance criteria; Opus when judgment is non-trivial, Sonnet when checks are mechanical | Medium |
-| `code` | Sonnet | medium | Implementation, debugging, test writing | Medium |
-| `write` | Sonnet | low | Long-form prose, documentation, structured reports | Medium |
+| `plan` | Fable 5 (or Opus) | high (`opus`: xhigh) | Architectural decomposition, dependency reasoning, acceptance-criteria authoring. Highest-leverage single call — use the strongest model. Fable's 1M context sees the whole spec + repo before drawing ownership boundaries | One Planner per sprint amortizes. Fable ~2× Opus cost; worth it on the foundation |
+| `evaluate` | Opus | high | Verifying against acceptance criteria — non-trivial judgment | Medium; one per sprint |
+| `code` | Sonnet | high | Implementation, debugging, test writing | Medium |
+| `write` | Sonnet | high | Long-form prose, documentation, structured reports | Medium |
 | `research` | Sonnet | high | Synthesizing multiple sources, connecting concepts | Medium |
-| `collect` | Haiku | low | Fetching data, format conversion, file discovery, simple transforms | ~15× cheaper than Sonnet |
+| `collect` | Haiku | _(none)_ | Fetching data, format conversion, file discovery, simple transforms | ~15× cheaper than Sonnet; Haiku takes no effort |
 
 ## Effort Levels
 
@@ -29,9 +31,21 @@ Current lineup (2026-06): Fable 5 (`fable` — 1M context, adaptive thinking,
 | `xhigh` | High-stakes architecture / security decisions | `Think harder.` |
 | `max` | Reserve for the hardest problems only — costs the most | `Ultrathink.` |
 
-Effort is orthogonal to model: `haiku/high` is cheaper than `opus/low` but the
-ceiling is bounded by the model's capability. Prefer scaling effort up on a
-capable model before reaching for a more expensive model.
+**Effort range is per-model** — not every model accepts every level:
+
+| Model | Valid effort |
+|---|---|
+| `haiku` | none (effort ignored) |
+| `sonnet` | low / medium / high / max (no `xhigh`) |
+| `opus` / `fable` / `mythos` | low / medium / high / xhigh / max |
+
+`/sprint` clamps an out-of-range value DOWN to the model's nearest valid
+level (`sonnet`+`xhigh` → `high`). `ultracode` is not an effort level (it
+is the Workflow opt-in keyword); `max` is the ceiling.
+
+Effort is otherwise orthogonal to model: `haiku/high` is cheaper than `opus/low`
+but the ceiling is bounded by the model's capability. Prefer scaling effort up on
+a capable model before reaching for a more expensive model.
 
 **Fable 5 exception**: Fable 5 uses adaptive thinking and budgets its own
 reasoning depth — effort keywords have limited effect on `fable`-routed
@@ -90,6 +104,15 @@ If you swap one Generator from Sonnet to Haiku where appropriate (a `collect` ta
 save ~14× on that call. Across hundreds of sprints, this adds up. But never trade quality
 for cost on judgment-heavy work — a wrong plan or a wrong eval costs more than every
 Generator call combined.
+
+**Cost note on the upgraded presets**: the recommended presets put `code` /
+`write` / `research` generators all at `sonnet/high`. Generators are the
+volume of a sprint, so this is the dominant cost driver — a deliberate
+quality-over-cost choice (the planner's foundation is worth not skimping
+on, and high-effort generation reduces retry cycles). For prose-heavy or
+mechanical sprints, hand-edit `write` back down to `medium` to save. The
+zero-config default stays conservative (all `sonnet/medium`) precisely so
+it never surprises anyone on cost.
 
 ## Runtime Override (`/sprint` Only)
 

@@ -2,7 +2,34 @@
 
 This file records Claude Code-side changes suggested while adding Codex support. Codex support should not silently reshape the Claude Code plugin runtime.
 
-## Current Recommendation (v2.5.0)
+## Current Recommendation (per-model effort + mythos)
+
+Make effort model-aware and add `mythos` to the routing value set; upgrade the
+recommended presets toward quality on the highest-leverage roles.
+
+Changes shipped:
+
+- Effort is no longer a uniform enum. Each model has its own valid ladder —
+  `haiku` takes none, `sonnet` has no `xhigh`, `opus` / `fable` / `mythos`
+  accept the full `low`–`max` range. `/sprint` clamps an out-of-range effort
+  DOWN to the model's nearest valid level (`normalizeEffort(model, effort)` in
+  the workflow script; the same rule by hand on the fallback). Schema stays v4.
+- `mythos` (Mythos 5) joins the model enum as a pure value-set extension. It is
+  restricted to Project Glasswing accounts; documented as such, with the same
+  spawn-failure handling as an inaccessible `opus`. Never in a default preset.
+- `ultracode` is deliberately NOT an effort value — it collides with the Claude
+  Code Workflow multi-agent opt-in keyword. `max` remains the ceiling.
+- Recommended presets upgraded: Planner takes the strongest model+effort
+  (`frontier`: fable/high, `full-access`: opus/xhigh), Evaluator opus/high, and
+  every reasoning Generator moves to sonnet/high (`collect` stays haiku, no
+  effort). The zero-config safe default is unchanged (all sonnet/medium).
+- Harness debt fixed in the same pass: role-prompt `{WORKSPACE}` tokens were
+  never substituted on either backend (the Assignment's concrete `WORKSPACE:`
+  line is now the single source of truth), and `sprint-progress-summary.md`
+  generation is now guarded (fallback Phase 4 marked mandatory; the Evaluator
+  tolerates a missing summary by reading `sprint-progress/` directly).
+
+## Previous Recommendation (v2.5.0)
 
 Move `/sprint` Phase 2–6 orchestration onto Claude Code dynamic workflows
 (v2.1.154+) so intermediate sprint artifacts stay out of the main session's
@@ -57,6 +84,13 @@ its adaptive thinking further dilutes prompt-keyword escalation, so an
 explicit parameter is the only reliable lever. When this lands, `/sprint`
 can drop the keyword-injection bridge on both backends. The config schema
 does not need to change.
+
+A native `effort` parameter should also encode the **per-model valid range**
+(or clamp server-side): today `haiku` accepts no effort, `sonnet` has no
+`xhigh`, and only `opus` / `fable` / `mythos` reach `xhigh`. `/sprint`
+currently mirrors this by rounding down per model before injecting the
+keyword; a native parameter that rejected or silently mis-applied an
+out-of-range value would reintroduce the bug the clamp removes.
 
 ## Deferred Ideas
 

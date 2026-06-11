@@ -1,7 +1,7 @@
 {
   "name": "agent-harness",
   "description": "Multi-agent harness for Claude Code: Planner→Generator→Evaluator sprints executed as background dynamic workflows (Agent-tool fallback), fable/opus/sonnet/haiku model routing with per-role reasoning effort, harness-engineering framework for design/diagnosis, and Anthropic 2026-04-04 P-G-E pattern.",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "author": {
     "name": "Victor",
     "url": "https://github.com/bouob"

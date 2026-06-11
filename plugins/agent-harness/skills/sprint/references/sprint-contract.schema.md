@@ -77,8 +77,8 @@ Tasks with no dependencies — safe to spawn simultaneously.
 
 #### TASK-001
 - **type**: code | write | research | collect
-- **model**: fable | opus | sonnet | haiku
-- **effort**: low | medium | high | xhigh | max
+- **model**: fable | mythos | opus | sonnet | haiku
+- **effort**: low | medium | high | xhigh | max (per-model: haiku takes none; sonnet has no xhigh)
 - **summary**: <one sentence>
 - **acceptance**: <which AC-N this task satisfies>
 - **deliverables**: <files / decisions / reports the Generator must produce>
