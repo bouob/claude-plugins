@@ -123,12 +123,18 @@ For each task ID in `sequential_tasks` (in listed order):
 
 ## Phase 4 — Aggregate
 
-Read all `{workspace}/sprint-progress/*.md` files.
+**Do not skip this phase.** Read all `{workspace}/sprint-progress/*.md` files.
 Write `{workspace}/sprint-progress-summary.md` listing each task ID, status (DONE/BLOCKED), and one-sentence summary.
 
 ---
 
 ## Phase 5 — Evaluator
+
+Step 5-guard: Confirm `{workspace}/sprint-progress-summary.md` exists. If it
+does not (Phase 4 was skipped or its write failed), run Phase 4 now before
+continuing — the Evaluator should never be invoked without it. If it still
+cannot be produced, pass the individual `sprint-progress/*.md` files instead
+and note the missing summary in the eval.
 
 Step 5a: Read these files and hold their full text in memory:
 - `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/evaluator.md` → EVALUATOR_CONTENT
@@ -214,3 +220,11 @@ Read `{workspace}/sprint-meta.json` fresh (do not rely on in-memory state from e
 - All intermediate artifacts (plan, progress files, eval) pass through
   the orchestrator's context window on this path — expect higher main
   session token usage than the workflow backend
+- `{effort_keyword(...)}` must be clamped to the role's **model** before
+  injection: `haiku` → no keyword; `sonnet`+`xhigh` → `Think hard.` (high);
+  only `opus` / `fable` / `mythos` reach `Think harder.` (xhigh). Round
+  effort DOWN to the model's nearest valid level (same rule as the workflow
+  backend's `normalizeEffort`)
+- The `WORKSPACE:` line you write into each Assignment is the agent's only
+  source for the workspace path — substitute the real `{workspace}` value;
+  never leave the literal token, or the agent reports an undefined path

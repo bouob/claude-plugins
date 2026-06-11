@@ -14,7 +14,8 @@ The sprint plan is provided above in your prompt under "Sprint Plan".
 Find your TASK_ID. Extract: title, type, acceptance_criteria[], depends_on[].
 
 If `depends_on` is not empty, check that each dependency has a completed progress file at
-`{WORKSPACE}/sprint-progress/<dep-id>.md`. Read those files from disk.
+`<workspace>/sprint-progress/<dep-id>.md`, where `<workspace>` is the path on the
+`WORKSPACE:` line in your Assignment section. Read those files from disk.
 If a dependency is missing or BLOCKED, write your progress file with status BLOCKED and stop.
 
 ## Step 2 — Implement
@@ -33,8 +34,9 @@ If a criterion cannot be met, mark status BLOCKED with a specific reason.
 
 ## Step 4 — Write Progress File
 
-Write `{WORKSPACE}/sprint-progress/<your-task-id>.md` following the sprint-progress schema
-provided above in your prompt under "Handoff Schema".
+Write `<workspace>/sprint-progress/<your-task-id>.md` following the sprint-progress schema
+provided above in your prompt under "Handoff Schema", where `<workspace>` is the path on
+the `WORKSPACE:` line in your Assignment section (a concrete path, not a templated token).
 
 ## Gotchas
 

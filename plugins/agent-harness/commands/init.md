@@ -12,7 +12,7 @@ knows which Claude models **and reasoning effort** to assign to each role
 lets users on Pro/Team subscriptions, Sonnet-only API keys, or any other
 access shape route around the assumption.
 
-> **v0.7.0 added per-role effort (reasoning level).** Each role is now
+> **v2.3.0 added per-role effort (reasoning level).** Each role is now
 > `{model, effort}` instead of a bare model string. v1 / v2 / v3 configs
 > auto-lift to v4 on first read.
 
@@ -56,13 +56,13 @@ preview:
 | Role                | Model  | Effort |
 |---------------------|--------|--------|
 | Planner             | Fable  | high   |
-| Evaluator           | Sonnet | medium |
-| Generator (code)    | Sonnet | medium |
-| Generator (write)   | Sonnet | low    |
+| Evaluator           | Opus   | high   |
+| Generator (code)    | Sonnet | high   |
+| Generator (write)   | Sonnet | high   |
 | Generator (research)| Sonnet | high   |
-| Generator (collect) | Haiku  | low    |
+| Generator (collect) | Haiku  | —      |
 
-Note: Fable 5 planner costs ~2x the Opus planner.
+Note: Fable 5 planner costs ~2x the Opus planner. Haiku takes no effort.
 ```
 
 ### Option 2 — `All models — Opus, Sonnet, Haiku` → `full-access`
@@ -70,12 +70,12 @@ preview:
 ```
 | Role                | Model  | Effort |
 |---------------------|--------|--------|
-| Planner             | Opus   | high   |
-| Evaluator           | Sonnet | medium |
-| Generator (code)    | Sonnet | medium |
-| Generator (write)   | Sonnet | low    |
+| Planner             | Opus   | xhigh  |
+| Evaluator           | Opus   | high   |
+| Generator (code)    | Sonnet | high   |
+| Generator (write)   | Sonnet | high   |
 | Generator (research)| Sonnet | high   |
-| Generator (collect) | Haiku  | low    |
+| Generator (collect) | Haiku  | —      |
 ```
 
 ### Option 3 — `Sonnet + Haiku (no Opus access)` → `no-opus`
@@ -84,11 +84,11 @@ preview:
 | Role                | Model  | Effort |
 |---------------------|--------|--------|
 | Planner             | Sonnet | high   |
-| Evaluator           | Sonnet | medium |
-| Generator (code)    | Sonnet | medium |
-| Generator (write)   | Sonnet | low    |
+| Evaluator           | Sonnet | high   |
+| Generator (code)    | Sonnet | high   |
+| Generator (write)   | Sonnet | high   |
 | Generator (research)| Sonnet | high   |
-| Generator (collect) | Haiku  | low    |
+| Generator (collect) | Haiku  | —      |
 ```
 
 ### Option 4 — `Sonnet only` → `sonnet-only`
@@ -97,9 +97,9 @@ preview:
 | Role                | Model  | Effort |
 |---------------------|--------|--------|
 | Planner             | Sonnet | high   |
-| Evaluator           | Sonnet | medium |
-| Generator (code)    | Sonnet | medium |
-| Generator (write)   | Sonnet | low    |
+| Evaluator           | Sonnet | high   |
+| Generator (code)    | Sonnet | high   |
+| Generator (write)   | Sonnet | high   |
 | Generator (research)| Sonnet | high   |
 | Generator (collect) | Sonnet | low    |
 ```
@@ -121,7 +121,8 @@ Skip this step unless the user picked `custom`. Otherwise ask each in
 order via `AskUserQuestion`.
 
 Questions 1-4 — model selection. Options for every question are `fable`,
-`opus`, `sonnet`, `haiku`:
+`opus`, `sonnet`, `haiku` (offer `mythos` only if the user states they
+have Project Glasswing access — it fails to spawn otherwise):
 
 1. "Which model for the Planner role?" → `models.planner.model`
 2. "Which model for the Evaluator role?" → `models.evaluator.model`
@@ -176,6 +177,9 @@ preview:
 | Generator (research)| xhigh  |
 | Generator (collect) | low    |
 ```
+Note: `xhigh` only applies if the role's model is `opus` / `fable` /
+`mythos`. On a `sonnet`-routed role it clamps to `high` (Sonnet has no
+`xhigh`); on `haiku` all effort is ignored.
 
 ## Step 4 — Build and Preview the Config
 
@@ -186,10 +190,14 @@ from Step 3).
 
 | Preset | planner | evaluator | gen.code | gen.write | gen.research | gen.collect |
 |---|---|---|---|---|---|---|
-| `frontier` | fable/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | haiku/low |
-| `full-access` | opus/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | haiku/low |
-| `no-opus` | sonnet/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | haiku/low |
-| `sonnet-only` | sonnet/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | sonnet/low |
+| `frontier` | fable/high | opus/high | sonnet/high | sonnet/high | sonnet/high | haiku/— |
+| `full-access` | opus/xhigh | opus/high | sonnet/high | sonnet/high | sonnet/high | haiku/— |
+| `no-opus` | sonnet/high | sonnet/high | sonnet/high | sonnet/high | sonnet/high | haiku/— |
+| `sonnet-only` | sonnet/high | sonnet/high | sonnet/high | sonnet/high | sonnet/high | sonnet/low |
+
+`haiku/—`: `collect` routes to Haiku, which takes no effort (omit the field).
+When writing the JSON, `collect` may still carry `"effort": "low"` for Haiku
+— it is ignored — so existing configs need no edit.
 
 For `custom`, combine Step 3 questions 1-4 (models) with question 5
 (effort tier from the tier table in config-schema.md § Presets).
@@ -274,7 +282,7 @@ After writing, tell the user:
   so the file remains hand-editable
 - Do not rename the existing config silently if the user picks Cancel;
   only Step 5 writes the file
-- v0.6.0 dropped multi-host support (engine=codex/auggie). v0.7.0
+- v0.6.0 dropped multi-host support (engine=codex/auggie). v2.3.0
   added per-role `effort`. v1 / v2 / v3 configs auto-lift to v4 on
   first read; v2 configs with engine != "claude" abort the lift and
   force re-init — Step 1 handles this gracefully by offering Reconfigure
@@ -285,11 +293,21 @@ After writing, tell the user:
   stays the same
 - `max` effort is intentionally not in any preset — reserve it for one-off
   hand-edits when you genuinely need ultrathink on a specific role
+- **Effort is per-model.** `haiku` takes no effort (the field is ignored —
+  never injected). `sonnet` has no `xhigh` (it clamps to `high`). Only
+  `opus` / `fable` / `mythos` accept `xhigh`. `/sprint` rounds an
+  out-of-range effort DOWN to the model's nearest valid level, so a config
+  is never rejected for this — but do not promise the user `xhigh` on a
+  Sonnet role. `ultracode` is not an effort level
 - `fable` (Claude Fable 5) uses adaptive thinking — the injected effort
   keyword has limited effect on fable-routed roles; the `effort` field
   there is advisory. Fable also costs ~2× Opus 4.8 ($10/$50 per Mtok)
   and silently falls back to Opus 4.8 on restricted topics
   (cybersecurity, bio/chem) — behavior and cost change without an error
+- `mythos` (Mythos 5) is restricted to Project Glasswing accounts and is
+  not on the general API. Only offer/write it if the user states they have
+  access; otherwise its subagent spawn fails like an inaccessible `opus`.
+  Never put it in a default/shared preset
 - This config routes **subagents only** — the orchestrator (main
   session) model is whatever the user picked via `/model`. Suggest
   Fable 5 there for big sprints (1M context), not in this config

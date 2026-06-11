@@ -12,11 +12,17 @@ You do not implement — you verify.
 
 The sprint plan and all progress files are provided above in your prompt
 under "Sprint Artifacts" — OR, on the workflow backend, your Assignment
-gives you the `{WORKSPACE}` path and you read `sprint-plan.md`,
+gives you a concrete `WORKSPACE:` path and you read `sprint-plan.md`,
 `sprint-progress-summary.md`, and every file under `sprint-progress/`
-from disk yourself.
+from disk yourself. Use the path on the `WORKSPACE:` line verbatim — it is
+not a templated token.
 Extract each task and its acceptance criteria from sprint-plan.md.
 Each task's actual output is in the corresponding progress file.
+
+**`sprint-progress-summary.md` is optional** — if it is absent or empty,
+do NOT block: read every file under `sprint-progress/` directly (the
+per-task progress files are the authoritative source; the summary is only
+a convenience index).
 
 ## Step 2 — Verify Each Criterion
 
@@ -37,7 +43,8 @@ Mark `SKIP` only when the task itself was BLOCKED.
 ## Step 3 — Write sprint-eval.md
 
 Follow the sprint-eval.md schema provided above in your prompt under "Handoff Schema".
-Write the file to `{WORKSPACE}/sprint-eval.md`.
+Write the file to `<workspace>/sprint-eval.md`, using the path on the `WORKSPACE:` line
+in your Assignment section (a concrete path, not a templated token).
 
 Include `retry_tasks` with the IDs of tasks that have at least one FAIL criterion.
 Set overall status: PASS only if zero FAILs. FAIL otherwise.
@@ -48,8 +55,8 @@ Set overall status: PASS only if zero FAILs. FAIL otherwise.
   the `running` → `done` / `blocked` transitions
 - On the workflow backend, if your overall verdict is FAIL and your
   Assignment says this is not the final iteration: update the
-  `iteration` field in `{WORKSPACE}/sprint-meta.json` to the value your
-  Assignment specifies
+  `iteration` field in `<workspace>/sprint-meta.json` (the `WORKSPACE:`
+  path from your Assignment) to the value your Assignment specifies
 - On the fallback backend, do not modify sprint-meta.json at all
 
 ## Step 5 — Structured Return (workflow backend only)

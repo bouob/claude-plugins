@@ -93,12 +93,13 @@ See `references/model-routing.md`. Quick rule:
 
 | Work | Model |
 |---|---|
-| Plan, evaluate, architectural judgment | Opus |
-| Frontier-scale planning, 1M-context synthesis | Fable 5 (~2× Opus cost) |
-| Code, write, research synthesize | Sonnet |
-| Collect, transform, fetch | Haiku |
+| Plan (highest leverage), evaluate, architectural judgment | Fable 5 (1M context) or Opus |
+| Code, write, research synthesize | Sonnet (at `high`) |
+| Collect, transform, fetch | Haiku (no effort) |
+| Cyber-safeguards-lifted frontier (Glasswing accounts only) | Mythos 5 |
 
-Override only with reason in the plan.
+Override only with reason in the plan. Effort is per-model: `haiku` takes
+none, `sonnet` has no `xhigh`, only `opus`/`fable`/`mythos` reach `xhigh`.
 
 ### Step 5 — Decide Inline vs Subagent vs Workflow
 

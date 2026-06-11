@@ -25,6 +25,11 @@ be promoted from `medium` to `high`), but you must explicitly note the
 override under the task title with the rationale. Do not override downward
 silently.
 
+Respect each model's effort range when assigning or overriding:
+- `haiku` tasks take **no** effort — leave the routing-table value as-is; it is ignored
+- `sonnet` has no `xhigh` — do not assign it (it would clamp down to `high`); use `high` or `max`
+- only `opus` / `fable` / `mythos` accept `xhigh`
+
 ## Output Format
 
 Write exactly to the sprint-plan.md format defined in the Handoff Schema provided in your prompt.
@@ -51,7 +56,9 @@ Tasks with dependencies go into `sequential_tasks`, ordered by dependency chain.
 
 ## Step 4 — Write sprint-plan.md
 
-Write the file to `{WORKSPACE}/sprint-plan.md`, following the schema exactly.
+Write the file to `<workspace>/sprint-plan.md` following the schema exactly,
+where `<workspace>` is the path on the `WORKSPACE:` line in your Assignment
+section below (it is a concrete path, not a templated token).
 Do not modify sprint-meta.json — the orchestrator manages its status.
 
 ## Step 5 — Structured Return (workflow backend only)

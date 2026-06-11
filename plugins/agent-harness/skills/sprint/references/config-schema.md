@@ -3,7 +3,7 @@
 Canonical reference for the model routing config consumed by `/sprint`
 Phase 0 and written by `/agent-harness:init`.
 
-**Schema version:** v4 (current, since v0.7.0). v0.7.0 adds per-role
+**Schema version:** v4 (current, since v2.3.0). v2.3.0 adds per-role
 `effort` (reasoning level). v1 (≤ v0.3.x), v2 (v0.4.x – v0.5.x), and v3
 (v0.6.x) configs auto-lift to v4 on first read. See "Migration" at the
 bottom.
@@ -50,16 +50,23 @@ guidance), so the override stays out of git by default.
 Each role is `{ model, effort }`. `model` is required; `effort` defaults
 to `medium` when omitted.
 
+**`effort` valid range is per-model** (see "Per-Model Effort Validity"
+below): `haiku` takes no effort; `sonnet` has no `xhigh`; only
+`opus` / `fable` / `mythos` accept the full ladder. An out-of-range
+value is clamped down to the model's nearest valid level rather than
+rejected — so a config is never invalid on this account, but the
+injected keyword may differ from the literal value.
+
 ### Field Reference
 
 | Field | Type | Valid Values | Default (no config) |
 |---|---|---|---|
 | `version` | integer | `4` | `4` |
-| `models.planner.model` | string | `fable` / `opus` / `sonnet` / `haiku` | `sonnet` |
+| `models.planner.model` | string | `fable` / `mythos` / `opus` / `sonnet` / `haiku` | `sonnet` |
 | `models.planner.effort` | string | `low` / `medium` / `high` / `xhigh` / `max` | `medium` |
-| `models.evaluator.model` | string | `fable` / `opus` / `sonnet` / `haiku` | `sonnet` |
+| `models.evaluator.model` | string | `fable` / `mythos` / `opus` / `sonnet` / `haiku` | `sonnet` |
 | `models.evaluator.effort` | string | same as above | `medium` |
-| `models.generator.<type>.model` | string | `fable` / `opus` / `sonnet` / `haiku` | `sonnet` |
+| `models.generator.<type>.model` | string | `fable` / `mythos` / `opus` / `sonnet` / `haiku` | `sonnet` |
 | `models.generator.<type>.effort` | string | same as above | `medium` (`low` for `collect`) |
 
 **`fable` added in v2.5.0** as a pure value-set extension — the schema
@@ -69,6 +76,22 @@ unchanged, which is harmless. `fable` maps to Claude Fable 5
 (`claude-fable-5`): 1M context, adaptive thinking, ~2× Opus 4.8 pricing
 ($10/$50 per Mtok). It requires Fable access on the account — without
 it, the subagent spawn fails the same way an inaccessible `opus` does.
+
+**`mythos`** (Mythos 5) is likewise a pure value-set extension (schema
+stays v4). It maps to the Mythos-class model with cybersecurity
+safeguards lifted and is **restricted to Project Glasswing accounts** —
+it is not on the general API. It is also not in Claude Code's documented
+model value set (`sonnet` / `opus` / `haiku` / `fable`), so on a
+non-Glasswing account the spawn may be rejected at parameter validation
+rather than surfacing as a model-access error. Do not put it in a
+shared/default preset.
+
+**`CLAUDE_CODE_SUBAGENT_MODEL` caveat**: that environment variable sits
+first in Claude Code's subagent model resolution chain (env var >
+per-invocation `model` > agent frontmatter > session model). If a user
+has it set, every `model` `/sprint` passes is silently overridden — the
+routing in this config has no effect and no error is raised. Unset it
+when using agent-harness routing.
 
 `<type>` is `code`, `write`, `research`, or `collect`.
 
@@ -107,6 +130,27 @@ These are the Anthropic-recognized escalation keywords for Claude Code's
 extended-thinking budget. `/sprint` injects them at the top of every
 subagent prompt based on the resolved `effort` value.
 
+(`ultracode` is **not** an effort level — in Claude Code it is the
+Workflow multi-agent opt-in keyword, a different concept. `max` is the
+effort ceiling.)
+
+### Per-Model Effort Validity
+
+Models do not all accept the same effort range. `/sprint` resolves the
+keyword against the model's valid ladder and **rounds the requested
+effort down** to the highest level that model supports:
+
+| Model | Valid effort ladder |
+|---|---|
+| `haiku` | _(none — effort is ignored, no keyword is ever injected)_ |
+| `sonnet` | `low` / `medium` / `high` / `max` (no `xhigh`) |
+| `opus` / `fable` / `mythos` | `low` / `medium` / `high` / `xhigh` / `max` |
+
+Clamp examples: `sonnet`+`xhigh` → `high`; `sonnet`+`max` → `max`;
+`haiku`+anything → no keyword; `opus`+`xhigh` → `xhigh`. This is why the
+`deep` effort tier (which assigns `xhigh` to planner/research) still works
+when those roles are routed to `sonnet` — it lands on `high` automatically.
+
 **Fable 5 caveat**: Fable 5 uses adaptive thinking — it budgets its own
 reasoning depth per request, so the escalation keywords have limited
 effect on `fable`-routed roles. `/sprint` still injects the keyword for
@@ -120,10 +164,10 @@ but **not** `effort` — the frontmatter `effort` field on subagents is
 only honored for statically-defined agents (`.claude/agents/*.md`), not
 for dynamic `Agent(...)` spawns used by `/sprint`. The same holds for
 the dynamic-workflow backend: the workflow runtime's `agent()` hook
-accepts `model` (`sonnet` / `opus` / `haiku` / `fable`) but no effort
-parameter either.
+accepts `model` (`sonnet` / `opus` / `haiku` / `fable` / `mythos`) but no
+effort parameter either.
 
-v0.7.0 bridges this gap by injecting the escalation keyword at the top
+v2.3.0 bridges this gap by injecting the escalation keyword at the top
 of each subagent's prompt — on both backends. When/if Anthropic extends
 either surface to accept `effort` directly, `/sprint` will switch to
 native effort transparently — the config schema stays the same.
@@ -137,11 +181,18 @@ in the config — they only drive the values the wizard writes.
 
 | Preset | planner | evaluator | gen.code | gen.write | gen.research | gen.collect | Suits |
 |---|---|---|---|---|---|---|---|
-| `frontier` | fable/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | haiku/low | Max subscription or API with Fable 5 access |
-| `full-access` | opus/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | haiku/low | Max subscription, API keys with Opus |
-| `no-opus` | sonnet/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | haiku/low | Pro / Team subscription, budget API |
-| `sonnet-only` | sonnet/high | sonnet/medium | sonnet/medium | sonnet/low | sonnet/high | sonnet/low | Sonnet-only access |
+| `frontier` | fable/high | opus/high | sonnet/high | sonnet/high | sonnet/high | haiku/— | Max subscription or API with Fable 5 access |
+| `full-access` | opus/xhigh | opus/high | sonnet/high | sonnet/high | sonnet/high | haiku/— | Max subscription, API keys with Opus |
+| `no-opus` | sonnet/high | sonnet/high | sonnet/high | sonnet/high | sonnet/high | haiku/— | Pro / Team subscription, budget API |
+| `sonnet-only` | sonnet/high | sonnet/high | sonnet/high | sonnet/high | sonnet/high | sonnet/low | Sonnet-only access |
 | `custom` | wizard asks 4 follow-up questions for model + 1 for effort tier | — |
+
+`haiku/—` means `collect` is routed to `haiku`, which takes no effort
+(the field is omitted / ignored). The recommended presets put every
+reasoning generator on `sonnet/high` on purpose — the planner is the
+single highest-leverage call (foundation quality), and generators are
+the volume, so they get a capable model at a high reasoning level rather
+than the cheapest. See the cost note in `model-routing.md`.
 
 Effort tier `balanced` (preset default) gives `high` to planner/research,
 `medium` to evaluator/code, `low` to write/collect. The `custom` preset
@@ -165,10 +216,10 @@ that scales every role up or down.
   "version": 4,
   "models": {
     "planner":   { "model": "fable",  "effort": "high" },
-    "evaluator": { "model": "sonnet", "effort": "medium" },
+    "evaluator": { "model": "opus",   "effort": "high" },
     "generator": {
-      "code":     { "model": "sonnet", "effort": "medium" },
-      "write":    { "model": "sonnet", "effort": "low" },
+      "code":     { "model": "sonnet", "effort": "high" },
+      "write":    { "model": "sonnet", "effort": "high" },
       "research": { "model": "sonnet", "effort": "high" },
       "collect":  { "model": "haiku",  "effort": "low" }
     }
@@ -176,11 +227,13 @@ that scales every role up or down.
 }
 ```
 
-Planner on Fable 5 costs ~2× the `full-access` planner (Opus). Reserve
-it for sprints where decomposition quality dominates — large multi-domain
-specs, heavy dependency reasoning. Note Fable 5 silently falls back to
-Opus 4.8 on restricted topics (cybersecurity, bio/chem), which changes
-cost and behavior without an error.
+Planner on Fable 5 costs ~2× the `full-access` planner (Opus), but it is
+one call per sprint and the foundation everything else builds on — the
+1M context lets it see the whole spec + repo before drawing ownership
+boundaries. Note Fable 5 silently falls back to Opus 4.8 on restricted
+topics (cybersecurity, bio/chem), which changes cost and behavior without
+an error; for those domains prefer `full-access` (explicit `opus`+`xhigh`).
+`collect`'s `effort` is ignored (Haiku takes none).
 
 ### `full-access` (recommended for users with Opus access)
 
@@ -188,11 +241,11 @@ cost and behavior without an error.
 {
   "version": 4,
   "models": {
-    "planner":   { "model": "opus",   "effort": "high" },
-    "evaluator": { "model": "sonnet", "effort": "medium" },
+    "planner":   { "model": "opus",   "effort": "xhigh" },
+    "evaluator": { "model": "opus",   "effort": "high" },
     "generator": {
-      "code":     { "model": "sonnet", "effort": "medium" },
-      "write":    { "model": "sonnet", "effort": "low" },
+      "code":     { "model": "sonnet", "effort": "high" },
+      "write":    { "model": "sonnet", "effort": "high" },
       "research": { "model": "sonnet", "effort": "high" },
       "collect":  { "model": "haiku",  "effort": "low" }
     }
@@ -207,10 +260,10 @@ cost and behavior without an error.
   "version": 4,
   "models": {
     "planner":   { "model": "sonnet", "effort": "high" },
-    "evaluator": { "model": "sonnet", "effort": "medium" },
+    "evaluator": { "model": "sonnet", "effort": "high" },
     "generator": {
-      "code":     { "model": "sonnet", "effort": "medium" },
-      "write":    { "model": "sonnet", "effort": "low" },
+      "code":     { "model": "sonnet", "effort": "high" },
+      "write":    { "model": "sonnet", "effort": "high" },
       "research": { "model": "sonnet", "effort": "high" },
       "collect":  { "model": "haiku",  "effort": "low" }
     }
@@ -225,10 +278,10 @@ cost and behavior without an error.
   "version": 4,
   "models": {
     "planner":   { "model": "sonnet", "effort": "high" },
-    "evaluator": { "model": "sonnet", "effort": "medium" },
+    "evaluator": { "model": "sonnet", "effort": "high" },
     "generator": {
-      "code":     { "model": "sonnet", "effort": "medium" },
-      "write":    { "model": "sonnet", "effort": "low" },
+      "code":     { "model": "sonnet", "effort": "high" },
+      "write":    { "model": "sonnet", "effort": "high" },
       "research": { "model": "sonnet", "effort": "high" },
       "collect":  { "model": "sonnet", "effort": "low" }
     }
@@ -269,9 +322,9 @@ For each role under models.*:
       replace with { model: value.model, effort: <default-for-role> }
     else (engine in {codex, auggie}):
       ABORT and report:
-        "Config role <role> uses engine={engine}, which v0.7.0 no
-         longer supports. Re-run /agent-harness:init to regenerate
-         the config."
+        "Config role <role> uses engine={engine}, which is no longer
+         supported (multi-host was removed in v0.6.0). Re-run
+         /agent-harness:init to regenerate the config."
   if value is a plain string:
     replace with { model: <value>, effort: <default-for-role> }
 ```
