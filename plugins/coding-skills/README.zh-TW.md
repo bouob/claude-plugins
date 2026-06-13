@@ -64,7 +64,25 @@ Skills：`/write`、`/fix`、`/review`、`/pr-review`、`/refactor`、`/diagnose
 - **工作流程 Skills** 使用編號步驟加上明確確認關卡 — Claude 在你核准計畫前不會撰寫任何程式碼
 - **方法論 Skills** 由工作流程指令在適當步驟載入（例如 `/fix` 總是載入 `testing`，若根因涉及設計問題則額外載入 `principles`）
 - 工作流程 Skills 皆設定 `disable-model-invocation: true` — 不會意外自動觸發
-- `/pr-review` 在 Claude Code 可使用 agents；若安裝 `pr-review-toolkit`，優先使用 typed agents；Codex 預設使用 sequential inline review，只有使用者明確要求 parallel/subagents 時才使用 Codex subagents。
+- `/pr-review` 預設使用 sequential inline review；當你明確要求 `parallel` / `subagents` 時，會把各個 diff-gated 維度委派給本 plugin 自帶的唯讀 specialist agents（見下方）— 不需任何外部 toolkit。
+
+## 審查 Agents
+
+`/pr-review` 內建四個唯讀 specialist agent（位於 `agents/`），自動被發現 —
+`/pr-review … parallel` 會委派給它們，你也可以直接呼叫任何一個（例如「審查這段 diff 的 error handling」）。
+
+| Agent | 維度 | 抓什麼 |
+|-------|------|--------|
+| `error-handling-reviewer` | Error handling | silent failure、吞掉的例外、不安全 fallback、錯誤的 retry、未回傳的 error state |
+| `type-design-reviewer` | Type design | 弱／未強制的不變量、可表示的非法狀態、`any`、破損的封裝（4 軸評分）|
+| `test-risk-reviewer` | Test risk | 行為改變卻無守備測試、錯誤斷言、被移除／弱化的測試、脆弱測試 |
+| `security-reviewer` | Security + 金鑰外洩 | injection、authz 繞過、CORS/auth/信任邊界落差、真實提交的金鑰 |
+
+為何優於通用 toolkit：每個 agent 都輸出與 `/pr-review` **相同的 severity schema**
+（`Blocking → High → Medium → Low`、四行 finding），合併時零翻譯；全部**唯讀**
+（簡化交給 `/refactor`）；接收 orchestrator 傳入的 **diff bundle**（適用遠端 GitHub
+PR，不限本地 `git diff`）；維持 **model-agnostic**（`inherit`）；且**不帶任何專案或
+廠商特定假設** — 缺少某慣例時絕不憑空生 finding。
 
 ## 工作流程
 

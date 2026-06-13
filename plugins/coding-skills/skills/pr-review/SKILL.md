@@ -43,16 +43,16 @@ or surrounding code, and has a concrete `file:line`.
 Eight static dimensions. **Default-on**: Code, Breaking change, Security, Secret
 leak. **Diff-gated** (enable only when the diff contains the trigger):
 
-| Dimension | Enable when the diff contains | Reuses |
-|-----------|-------------------------------|--------|
-| Code (correctness / boundaries / regression / project rules) | always | `principles` |
-| Breaking change (API / schema / config / route / output shape / visible behavior) | always | — |
-| Security (injection / authz bypass / CORS / auth / trust boundary / front-back validation gap) | always | project `security.md` if present |
-| Secret leak (token / API key / private key / cookie / `.env` / config / log) | always | — |
-| Type design (invariant expression / `any` / nullable-vs-required confusion) | `.ts`/`.tsx` type or interface changes | `principles` |
-| Error handling (silent failure / swallowed error / unsafe fallback / wrong retry / unreturned error state) | try/catch, `.catch(`, fallback, retry, error-path changes | — |
-| Test risk (missing coverage / wrong assertion / removed test / happy-path-only) | added/removed/changed test files | `testing` |
-| Comment & doc consistency (comment / README / API doc / example contradicts code) | comment, README, or doc changes | — |
+| Dimension | Enable when the diff contains | Reuses | Delegate to (parallel) |
+|-----------|-------------------------------|--------|------------------------|
+| Code (correctness / boundaries / regression / project rules) | always | `principles` | — inline |
+| Breaking change (API / schema / config / route / output shape / visible behavior) | always | — | — inline |
+| Security (injection / authz bypass / CORS / auth / trust boundary / front-back validation gap) | always | project `security.md` if present | `security-reviewer` |
+| Secret leak (token / API key / private key / cookie / `.env` / config / log) | always | — | `security-reviewer` |
+| Type design (invariant expression / `any` / nullable-vs-required confusion) | `.ts`/`.tsx` type or interface changes | `principles` | `type-design-reviewer` |
+| Error handling (silent failure / swallowed error / unsafe fallback / wrong retry / unreturned error state) | try/catch, `.catch(`, fallback, retry, error-path changes | — | `error-handling-reviewer` |
+| Test risk (missing coverage / wrong assertion / removed test / happy-path-only) | added/removed/changed test files | `testing` | `test-risk-reviewer` |
+| Comment & doc consistency (comment / README / API doc / example contradicts code) | comment, README, or doc changes | — | — inline |
 
 ## Step 1 — Resolve PR Scope
 
@@ -99,9 +99,22 @@ Use this path only when the user explicitly asks for `parallel`, `subagents`,
 supported way to delegate bounded review slices. Do not infer permission from a
 normal `pr-review` request.
 
+This plugin ships its own read-only specialist agents for the diff-gated
+dimensions; prefer them when delegating:
+
+- `error-handling-reviewer` → Error handling
+- `type-design-reviewer` → Type design
+- `test-risk-reviewer` → Test risk
+- `security-reviewer` → Security + Secret leak
+
+Code, Breaking change, and Comment/doc stay inline in this context. Every agent
+emits the exact Step 6 schema, so merging delegated results is a straight
+concatenation + de-dup — no severity translation. No external toolkit is needed.
+
 Choose the slice shape before delegating:
 
-- Small or focused PR: one slice per active dimension or small dimension group.
+- Small or focused PR: one slice per active dimension or small dimension group,
+  routed to the matching agent above.
 - Large PR: one slice per file group, such as security-related files, tests,
   routes, data-access code, UI, or generated/config files.
 
@@ -207,9 +220,11 @@ only on explicit user request:
 - Delegated reviewers are isolated contexts — every delegated slice **must**
   carry the PR metadata, changed-file path list, and relevant diff hunks. Without
   that bundle, the reviewer may duplicate data collection and waste context.
-- This skill does not depend on external typed-agent toolkits. Use bounded
-  delegated review only when the user explicitly asks for it and the environment
-  supports it; otherwise run the same checklist inline.
+- Delegated review dispatches to this plugin's own specialist agents
+  (`error-handling-reviewer`, `type-design-reviewer`, `test-risk-reviewer`,
+  `security-reviewer`) — no external toolkit required. Use it only when the user
+  explicitly asks and the environment supports subagents; otherwise run the same
+  checklist inline.
 - Empty `$ARGUMENTS`: if the current branch has no resolvable GitHub PR, route
   to `/review`, do not fabricate a review.
 - Secret-leak `Blocking` requires high confidence the value is real. Fake keys in
