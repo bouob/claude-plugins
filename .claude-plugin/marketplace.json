@@ -75,6 +75,22 @@
       "license": "MIT"
     },
     {
+      "name": "repo-vet",
+      "source": "./plugins/repo-vet",
+      "description": "Pre-use security vetting for third-party repositories — static analysis for credential theft, hidden outbound connections, install-time attacks, obfuscated payloads, and supply-chain risks.",
+      "keywords": [
+        "security",
+        "audit",
+        "supply-chain",
+        "static-analysis",
+        "repo-vetting",
+        "malware-detection",
+        "credential-theft",
+        "secrets-scanning"
+      ],
+      "license": "MIT"
+    },
+    {
       "name": "sysadmin-skills",
       "source": "./plugins/sysadmin-skills",
       "description": "ITIL 4-based IT operations skills for system administrators — incident response, change management with CAB review, and status communication.",
