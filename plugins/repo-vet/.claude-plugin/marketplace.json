@@ -1,0 +1,17 @@
+{
+  "name": "repo-vet",
+  "owner": {
+    "name": "Victor"
+  },
+  "metadata": {
+    "description": "Security vetting for third-party code.",
+    "version": "0.2.0"
+  },
+  "plugins": [
+    {
+      "name": "repo-vet",
+      "source": "./",
+      "description": "Scan a third-party repo for malicious patterns before you use it."
+    }
+  ]
+}
