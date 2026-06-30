@@ -23,9 +23,11 @@ This skill has two concerns:
 
 1. The `pr-review` workflow: PR scope resolution, context collection, review
    dimensions, read-only rules, and output schema.
-2. The execution policy: if the user explicitly asks for delegated or parallel
-   review and the current environment supports it, split the review into bounded
-   read-only slices. Otherwise run the same workflow sequentially.
+2. The execution policy: by default, split the review into bounded read-only
+   slices and delegate the active diff-gated dimensions to this plugin's
+   specialist agents, run in parallel. This is the only path — there is no
+   user-facing toggle. A host without the Task tool degrades to a single inline
+   pass over the same checklist anchors.
 
 The review dimensions below are anchors, not a closed list. Report any
 high-confidence merge risk that is inside the PR scope, can be tied to the diff
@@ -43,7 +45,7 @@ or surrounding code, and has a concrete `file:line`.
 Eight static dimensions. **Default-on**: Code, Breaking change, Security, Secret
 leak. **Diff-gated** (enable only when the diff contains the trigger):
 
-| Dimension | Enable when the diff contains | Reuses | Delegate to (parallel) |
+| Dimension | Enable when the diff contains | Reuses | Delegated agent (default) |
 |-----------|-------------------------------|--------|------------------------|
 | Code (correctness / boundaries / regression / project rules) | always | `principles` | — inline |
 | Breaking change (API / schema / config / route / output shape / visible behavior) | always | — | — inline |
@@ -92,33 +94,45 @@ Use the same output schema regardless of execution style. Apply the active
 dimension checklists, but stay open to adjacent correctness, compatibility,
 security, or reliability risks discovered while tracing the PR.
 
-### Delegated or Parallel Review
+### Delegated Parallel Review (default)
 
-Use this path only when the user explicitly asks for `parallel`, `subagents`,
-`delegation`, or equivalent wording, and the current environment provides a
-supported way to delegate bounded review slices. Do not infer permission from a
-normal `pr-review` request.
+Whenever the Task tool is available, delegate the active diff-gated dimensions to
+this plugin's read-only specialist agents and run them in parallel. This is the
+default and only execution path — do not wait for the user to ask for `parallel`
+or `subagents`.
 
-This plugin ships its own read-only specialist agents for the diff-gated
-dimensions; prefer them when delegating:
+Dimension → agent:
 
-- `error-handling-reviewer` → Error handling
-- `type-design-reviewer` → Type design
-- `test-risk-reviewer` → Test risk
-- `security-reviewer` → Security + Secret leak
+- Security + Secret leak → `security-reviewer` (always active → always launched)
+- Error handling → `error-handling-reviewer`
+- Type design → `type-design-reviewer`
+- Test risk → `test-risk-reviewer`
 
-Code, Breaking change, and Comment/doc stay inline in this context. Every agent
-emits the exact Step 6 schema, so merging delegated results is a straight
-concatenation + de-dup — no severity translation. No external toolkit is needed.
+Code, Breaking change, and Comment/doc consistency have no dedicated agent — they
+stay inline in this context. Every agent emits the exact Step 6 schema, so merging
+delegated results is a straight concatenation + de-dup — no severity translation.
+No external toolkit is needed.
 
-Choose the slice shape before delegating:
+Launch steps — this is what makes the agents run concurrently:
 
-- Small or focused PR: one slice per active dimension or small dimension group,
-  routed to the matching agent above.
-- Large PR: one slice per file group, such as security-related files, tests,
-  routes, data-access code, UI, or generated/config files.
+1. Build the shared diff bundle once from Step 2: PR metadata, changed-file path
+   list, and the relevant diff hunks.
+2. In a SINGLE assistant message, issue one `Task` call per active delegated
+   dimension, each routed to the matching agent above. Multiple `Task` calls in
+   one message run concurrently — do not send them one message at a time.
+3. While the agents run, review the inline dimensions (Code, Breaking change,
+   Comment/doc) in this context using the checklist anchors below.
+4. Wait for every agent to return, then merge per Step 5.
 
-Each delegated slice must receive:
+Slice shape — decide before sending the Task calls:
+
+- Small or focused PR: one slice per active dimension, routed to the matching
+  agent above.
+- Large PR: one slice per file group (security-related files, tests, routes,
+  data-access code, UI, generated/config files), still routed to the agent that
+  owns each group's dominant dimension.
+
+Each delegated slice (Task prompt) must carry:
 
 - the PR metadata and changed-file path list,
 - the relevant diff hunks,
@@ -129,10 +143,11 @@ Each delegated slice must receive:
 - the instruction that checklist anchors are not exhaustive; adjacent clear
   merge risks inside PR scope should still be reported.
 
-### Sequential Review
+### Review criteria (checklist anchors)
 
-Use this path by default. Review each active dimension in this context, applying
-the checklist anchors below.
+These anchors are the shared review criteria: passed into each delegated slice
+above, and applied directly in this context for the inline dimensions (and for
+the whole review if a host has no Task tool).
 
 Per-dimension checklist anchors:
 
@@ -220,11 +235,11 @@ only on explicit user request:
 - Delegated reviewers are isolated contexts — every delegated slice **must**
   carry the PR metadata, changed-file path list, and relevant diff hunks. Without
   that bundle, the reviewer may duplicate data collection and waste context.
-- Delegated review dispatches to this plugin's own specialist agents
-  (`error-handling-reviewer`, `type-design-reviewer`, `test-risk-reviewer`,
-  `security-reviewer`) — no external toolkit required. Use it only when the user
-  explicitly asks and the environment supports subagents; otherwise run the same
-  checklist inline.
+- Delegated parallel review is the default and only path — it dispatches to this
+  plugin's own specialist agents (`error-handling-reviewer`, `type-design-reviewer`,
+  `test-risk-reviewer`, `security-reviewer`), no external toolkit required. A host
+  without the Task tool degrades to applying the same checklist anchors inline —
+  no keyword, no separate mode.
 - Empty `$ARGUMENTS`: if the current branch has no resolvable GitHub PR, route
   to `/review`, do not fabricate a review.
 - Secret-leak `Blocking` requires high confidence the value is real. Fake keys in

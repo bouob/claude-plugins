@@ -64,12 +64,12 @@ Skills：`/write`、`/fix`、`/review`、`/pr-review`、`/refactor`、`/diagnose
 - **工作流程 Skills** 使用編號步驟加上明確確認關卡 — Claude 在你核准計畫前不會撰寫任何程式碼
 - **方法論 Skills** 由工作流程指令在適當步驟載入（例如 `/fix` 總是載入 `testing`，若根因涉及設計問題則額外載入 `principles`）
 - 工作流程 Skills 皆設定 `disable-model-invocation: true` — 不會意外自動觸發
-- `/pr-review` 預設使用 sequential inline review；當你明確要求 `parallel` / `subagents` 時，會把各個 diff-gated 維度委派給本 plugin 自帶的唯讀 specialist agents（見下方）— 不需任何外部 toolkit。
+- `/pr-review` 預設就把各個 active diff-gated 維度委派給本 plugin 自帶的唯讀 specialist agents 並平行執行 — 不需任何關鍵字、不需外部 toolkit。host 無 subagent 支援時自然退化成單一 context 的 inline 審查（套用同一份 checklist）。
 
 ## 審查 Agents
 
 `/pr-review` 內建四個唯讀 specialist agent（位於 `agents/`），自動被發現 —
-`/pr-review … parallel` 會委派給它們，你也可以直接呼叫任何一個（例如「審查這段 diff 的 error handling」）。
+`/pr-review` 預設就平行委派給它們，你也可以直接呼叫任何一個（例如「審查這段 diff 的 error handling」）。
 
 | Agent | 維度 | 抓什麼 |
 |-------|------|--------|
