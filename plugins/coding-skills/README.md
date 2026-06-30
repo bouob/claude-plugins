@@ -64,13 +64,13 @@ These are not shown in the `/` menu. Workflow skills instruct Claude to load the
 - **Workflow skills** use numbered steps with explicit confirmation gates — Claude won't write code until you approve the plan
 - **Methodology skills** are loaded by workflow instructions at the appropriate step (e.g., `/fix` always loads `testing`, optionally loads `principles` if the root cause is structural)
 - `disable-model-invocation: true` on workflow skills — no accidental auto-triggering
-- `/pr-review` runs sequential inline review by default. When you explicitly ask for `parallel` / `subagents`, it delegates each diff-gated dimension to this plugin's own read-only specialist agents (see below) — no external toolkit required.
+- `/pr-review` delegates each active diff-gated dimension to this plugin's own read-only specialist agents and runs them in parallel by default — no keyword needed, no external toolkit required. A host without subagent support degrades to a single inline pass over the same checklist.
 
 ## Review Agents
 
 `/pr-review` ships four read-only specialist agents (in `agents/`). They are
-auto-discovered — `/pr-review … parallel` delegates to them, and you can also
-invoke any of them directly ("review the error handling in this diff").
+auto-discovered — `/pr-review` delegates to them in parallel by default, and you
+can also invoke any of them directly ("review the error handling in this diff").
 
 | Agent | Dimension | What it catches |
 |-------|-----------|-----------------|
