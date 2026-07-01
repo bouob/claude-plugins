@@ -64,15 +64,16 @@ Skills：`/write`、`/fix`、`/review`、`/pr-review`、`/refactor`、`/diagnose
 - **工作流程 Skills** 使用編號步驟加上明確確認關卡 — Claude 在你核准計畫前不會撰寫任何程式碼
 - **方法論 Skills** 由工作流程指令在適當步驟載入（例如 `/fix` 總是載入 `testing`，若根因涉及設計問題則額外載入 `principles`）
 - 工作流程 Skills 皆設定 `disable-model-invocation: true` — 不會意外自動觸發
-- `/pr-review` 預設就把各個 active diff-gated 維度委派給本 plugin 自帶的唯讀 specialist agents 並平行執行 — 不需任何關鍵字、不需外部 toolkit。host 無 subagent 支援時自然退化成單一 context 的 inline 審查（套用同一份 checklist）。
+- `/pr-review` 預設就把**全部**審查維度委派給本 plugin 自帶的**五個**唯讀 specialist agent 並一律平行執行 — 不需任何關鍵字、不 diff-gating、不需外部 toolkit。主 context 只負責 orchestrate 與合併，不 inline 審任何東西。host 無 subagent 支援時自然退化成單一 context 的 inline 審查（套用同一份 checklist）。
 
 ## 審查 Agents
 
-`/pr-review` 內建四個唯讀 specialist agent（位於 `agents/`），自動被發現 —
-`/pr-review` 預設就平行委派給它們，你也可以直接呼叫任何一個（例如「審查這段 diff 的 error handling」）。
+`/pr-review` 內建五個唯讀 specialist agent（位於 `agents/`），自動被發現 —
+`/pr-review` 預設就平行委派給全部，你也可以直接呼叫任何一個（例如「審查這段 diff 的 error handling」）。
 
 | Agent | 維度 | 抓什麼 |
 |-------|------|--------|
+| `correctness-reviewer` | Code + breaking change + 註解/文件一致性 | 錯誤條件、off-by-one、缺 guard、壞掉的 state transition、相容性破壞、與程式碼矛盾的註解/文件 |
 | `error-handling-reviewer` | Error handling | silent failure、吞掉的例外、不安全 fallback、錯誤的 retry、未回傳的 error state |
 | `type-design-reviewer` | Type design | 弱／未強制的不變量、可表示的非法狀態、`any`、破損的封裝（4 軸評分）|
 | `test-risk-reviewer` | Test risk | 行為改變卻無守備測試、錯誤斷言、被移除／弱化的測試、脆弱測試 |

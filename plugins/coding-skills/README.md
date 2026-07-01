@@ -64,16 +64,17 @@ These are not shown in the `/` menu. Workflow skills instruct Claude to load the
 - **Workflow skills** use numbered steps with explicit confirmation gates — Claude won't write code until you approve the plan
 - **Methodology skills** are loaded by workflow instructions at the appropriate step (e.g., `/fix` always loads `testing`, optionally loads `principles` if the root cause is structural)
 - `disable-model-invocation: true` on workflow skills — no accidental auto-triggering
-- `/pr-review` delegates each active diff-gated dimension to this plugin's own read-only specialist agents and runs them in parallel by default — no keyword needed, no external toolkit required. A host without subagent support degrades to a single inline pass over the same checklist.
+- `/pr-review` delegates **every** review dimension to this plugin's own five read-only specialist agents and runs them all in parallel by default, every time — no keyword needed, no diff-gating, no external toolkit. The main context only orchestrates and merges; nothing is reviewed inline. A host without subagent support degrades to a single inline pass over the same checklist.
 
 ## Review Agents
 
-`/pr-review` ships four read-only specialist agents (in `agents/`). They are
-auto-discovered — `/pr-review` delegates to them in parallel by default, and you
-can also invoke any of them directly ("review the error handling in this diff").
+`/pr-review` ships five read-only specialist agents (in `agents/`). They are
+auto-discovered — `/pr-review` delegates to all of them in parallel by default, and
+you can also invoke any of them directly ("review the error handling in this diff").
 
 | Agent | Dimension | What it catches |
 |-------|-----------|-----------------|
+| `correctness-reviewer` | Code + breaking change + comment/doc | Wrong conditions, off-by-one, missing guards, broken state transitions, compatibility breaks, code-contradicting comments/docs |
 | `error-handling-reviewer` | Error handling | Silent failures, swallowed exceptions, unsafe fallbacks, wrong retry, unreturned error state |
 | `type-design-reviewer` | Type design | Weak/unenforced invariants, representable illegal states, `any`, broken encapsulation (4-axis rubric) |
 | `test-risk-reviewer` | Test risk | Behavior changed without a guarding test, wrong assertions, removed/weakened tests, brittle tests |

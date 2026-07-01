@@ -23,11 +23,13 @@ This skill has two concerns:
 
 1. The `pr-review` workflow: PR scope resolution, context collection, review
    dimensions, read-only rules, and output schema.
-2. The execution policy: by default, split the review into bounded read-only
-   slices and delegate the active diff-gated dimensions to this plugin's
-   specialist agents, run in parallel. This is the only path — there is no
-   user-facing toggle. A host without the Task tool degrades to a single inline
-   pass over the same checklist anchors.
+2. The execution policy: delegate **every** review dimension to this plugin's
+   five read-only specialist agents and run them all in parallel — every time.
+   Fixing dispatch this way keeps every dimension covered, keeps this context
+   free of inline review, and keeps output uniform. There is no diff-gating of
+   dispatch and no user-facing toggle: the main context only builds the bundle,
+   fans out the Task calls, and merges. A host without the Task tool degrades to
+   a single inline pass over the same checklist anchors.
 
 The review dimensions below are anchors, not a closed list. Report any
 high-confidence merge risk that is inside the PR scope, can be tied to the diff
@@ -42,19 +44,20 @@ or surrounding code, and has a concrete `file:line`.
 
 ## Review Dimensions
 
-Eight static dimensions. **Default-on**: Code, Breaking change, Security, Secret
-leak. **Diff-gated** (enable only when the diff contains the trigger):
+Eight static dimensions, each owned by one specialist agent. All are reviewed
+every time — the **Enable when** column is now **informational** (it tells each
+agent what to focus on), not a dispatch gate.
 
-| Dimension | Enable when the diff contains | Reuses | Delegated agent (default) |
+| Dimension | Enable when the diff contains | Reuses | Delegated agent |
 |-----------|-------------------------------|--------|------------------------|
-| Code (correctness / boundaries / regression / project rules) | always | `principles` | — inline |
-| Breaking change (API / schema / config / route / output shape / visible behavior) | always | — | — inline |
+| Code (correctness / boundaries / regression / project rules) | always | `principles` | `correctness-reviewer` |
+| Breaking change (API / schema / config / route / output shape / visible behavior) | always | — | `correctness-reviewer` |
 | Security (injection / authz bypass / CORS / auth / trust boundary / front-back validation gap) | always | project `security.md` if present | `security-reviewer` |
 | Secret leak (token / API key / private key / cookie / `.env` / config / log) | always | — | `security-reviewer` |
 | Type design (invariant expression / `any` / nullable-vs-required confusion) | `.ts`/`.tsx` type or interface changes | `principles` | `type-design-reviewer` |
 | Error handling (silent failure / swallowed error / unsafe fallback / wrong retry / unreturned error state) | try/catch, `.catch(`, fallback, retry, error-path changes | — | `error-handling-reviewer` |
 | Test risk (missing coverage / wrong assertion / removed test / happy-path-only) | added/removed/changed test files | `testing` | `test-risk-reviewer` |
-| Comment & doc consistency (comment / README / API doc / example contradicts code) | comment, README, or doc changes | — | — inline |
+| Comment & doc consistency (comment / README / API doc / example contradicts code) | comment, README, or doc changes | — | `correctness-reviewer` |
 
 ## Step 1 — Resolve PR Scope
 
@@ -84,9 +87,10 @@ do not review as if the bundle were complete.
 
 ## Step 3 — Select Active Dimensions
 
-Run the four default-on dimensions. Scan the diff and enable each diff-gated
-dimension whose trigger (table above) is present. List the active dimensions
-before reviewing so the user sees what was and was not checked.
+All eight dimensions are always active and all five agents always run. The
+**Enable when** triggers in the table above are only focus hints handed to each
+agent, not a dispatch gate. Before reviewing, list the dimensions and the agents
+being launched so the user sees the full coverage.
 
 ## Step 4 — Run the Review
 
@@ -96,33 +100,33 @@ security, or reliability risks discovered while tracing the PR.
 
 ### Delegated Parallel Review (default)
 
-Whenever the Task tool is available, delegate the active diff-gated dimensions to
-this plugin's read-only specialist agents and run them in parallel. This is the
-default and only execution path — do not wait for the user to ask for `parallel`
-or `subagents`.
+Whenever the Task tool is available, delegate every dimension to this plugin's
+five read-only specialist agents and run them all in parallel — every time. This
+is the default and only execution path. Do not diff-gate the dispatch and do not
+wait for the user to ask for `parallel` or `subagents`.
 
-Dimension → agent:
+Dimension → agent (all five always launched):
 
-- Security + Secret leak → `security-reviewer` (always active → always launched)
+- Code + Breaking change + Comment/doc consistency → `correctness-reviewer`
+- Security + Secret leak → `security-reviewer`
 - Error handling → `error-handling-reviewer`
 - Type design → `type-design-reviewer`
 - Test risk → `test-risk-reviewer`
 
-Code, Breaking change, and Comment/doc consistency have no dedicated agent — they
-stay inline in this context. Every agent emits the exact Step 6 schema, so merging
-delegated results is a straight concatenation + de-dup — no severity translation.
-No external toolkit is needed.
+Every agent emits the exact Step 6 schema, so merging delegated results is a
+straight concatenation + de-dup — no severity translation, no external toolkit.
+An agent whose dimension is absent from the diff returns no findings; that is
+expected and collapses to a one-line note in Step 5, not a wasted section.
 
 Launch steps — this is what makes the agents run concurrently:
 
 1. Build the shared diff bundle once from Step 2: PR metadata, changed-file path
    list, and the relevant diff hunks.
-2. In a SINGLE assistant message, issue one `Task` call per active delegated
-   dimension, each routed to the matching agent above. Multiple `Task` calls in
-   one message run concurrently — do not send them one message at a time.
-3. While the agents run, review the inline dimensions (Code, Breaking change,
-   Comment/doc) in this context using the checklist anchors below.
-4. Wait for every agent to return, then merge per Step 5.
+2. In a SINGLE assistant message, issue one `Task` call per agent — all five
+   above — each carrying the slice it owns. Multiple `Task` calls in one message
+   run concurrently; do not send them one message at a time, and do not review
+   any dimension inline in this context.
+3. Wait for every agent to return, then merge per Step 5.
 
 Slice shape — decide before sending the Task calls:
 
@@ -145,9 +149,8 @@ Each delegated slice (Task prompt) must carry:
 
 ### Review criteria (checklist anchors)
 
-These anchors are the shared review criteria: passed into each delegated slice
-above, and applied directly in this context for the inline dimensions (and for
-the whole review if a host has no Task tool).
+These anchors are the shared review criteria passed into each delegated slice
+above (and applied directly in this context only if a host has no Task tool).
 
 Per-dimension checklist anchors:
 
@@ -176,13 +179,16 @@ Per-dimension checklist anchors:
 
 ## Step 5 — Merge Findings
 
-Combine results from all dimensions and review slices:
+Combine results from all five agents:
 
 - de-duplicate findings that point at the same `file:line`,
 - calibrate severity against the table in Step 6,
 - ensure every finding has file and line number,
 - drop pure style preferences,
-- skip points already raised in existing PR comments (from Step 2).
+- skip points already raised in existing PR comments (from Step 2),
+- collapse every agent that returned no findings into a single trailing line
+  (e.g. `Clean: type-design, error-handling, test-risk — no findings`) instead
+  of giving each an empty section.
 
 ## Step 6 — Output
 
@@ -236,10 +242,11 @@ only on explicit user request:
   carry the PR metadata, changed-file path list, and relevant diff hunks. Without
   that bundle, the reviewer may duplicate data collection and waste context.
 - Delegated parallel review is the default and only path — it dispatches to this
-  plugin's own specialist agents (`error-handling-reviewer`, `type-design-reviewer`,
-  `test-risk-reviewer`, `security-reviewer`), no external toolkit required. A host
-  without the Task tool degrades to applying the same checklist anchors inline —
-  no keyword, no separate mode.
+  plugin's own five specialist agents (`correctness-reviewer`, `security-reviewer`,
+  `error-handling-reviewer`, `type-design-reviewer`, `test-risk-reviewer`), all
+  launched every time, no external toolkit required. A host without the Task tool
+  degrades to applying the same checklist anchors inline — no keyword, no separate
+  mode.
 - Empty `$ARGUMENTS`: if the current branch has no resolvable GitHub PR, route
   to `/review`, do not fabricate a review.
 - Secret-leak `Blocking` requires high confidence the value is real. Fake keys in
