@@ -5,7 +5,7 @@
     "email": "victor@0x1.now"
   },
   "metadata": {
-    "description": "Victor's Claude Code plugins — statusline, coding skills, and more.",
+    "description": "Victor's Claude Code plugins — statusline, coding skills, sysadmin skills, multi-agent harness, repo security vetting, and Notion↔gbrain sync.",
     "version": "1.0.0"
   },
   "plugins": [
