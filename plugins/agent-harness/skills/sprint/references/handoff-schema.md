@@ -66,7 +66,7 @@ Rules:
 - `depends_on` must reference valid task IDs in the same plan
 - Every task must have at least one acceptance criterion
 - `type` determines which `model` and `effort` the Generator uses — look up the orchestrator-provided Resolved Model Routing Table
-- `effort` is the reasoning depth the Generator should apply. The orchestrator translates it into a prompt-level keyword (`Think.`, `Think hard.`, `Think harder.`, `Ultrathink.`) injected at the top of the Generator's prompt. Omit the line entirely for `low`. Effort is clamped to the model's range first: `haiku` gets no keyword; `sonnet`+`xhigh` clamps to `high`; only `opus` / `fable` / `mythos` reach `Think harder.`
+- `effort` is the reasoning depth the Generator should apply. The orchestrator clamps it to the model's range first (`haiku` gets none; `sonnet`+`xhigh` clamps to `high`; only `opus` / `fable` / `mythos` reach `xhigh`), then delivers it per backend: the **workflow** backend passes it as a native `effort` opt on `agent()`; the **fallback** backend injects a keyword (`Think.`, `Think hard.`, `Think harder.`, `Ultrathink.`) at the top of the Generator's prompt (omitted for `low`).
 
 ---
 

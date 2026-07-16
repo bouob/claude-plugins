@@ -17,11 +17,13 @@ same package.
 ## Install
 
 ```bash
-# Add marketplace (one-time)
+# Via the bouob-plugins marketplace (recommended)
 /plugin marketplace add bouob/claude-plugins
-
-# Install
 /plugin install agent-harness@bouob-plugins
+
+# Or directly from this repo
+/plugin marketplace add bouob/agent-harness
+/plugin install agent-harness@agent-harness
 
 # Or load directly during development
 claude --plugin-dir ./agent-harness

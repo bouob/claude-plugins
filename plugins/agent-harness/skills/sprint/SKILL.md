@@ -125,14 +125,20 @@ need them:
   - `research` — synthesizing multiple sources, connecting concepts
   - `collect` — fetching data, format conversion, file discovery
 
-### Effort keyword mapping
+### Effort resolution (differs by backend)
 
-Reasoning effort is delivered by injecting this keyword at the **top**
-of every subagent prompt, before any other content — on both backends.
-Neither Claude Code's `Agent` tool nor the workflow runtime's `agent()`
-hook accepts `effort` at invocation time; both accept only `model`.
+Reasoning effort is **clamped to the model's valid ladder first** (ladder
+table below), then delivered differently on each backend:
 
-| `effort` value | Keyword to inject |
+- **Workflow backend** (this file's Phase 2 script): pass the clamped value
+  as the native `effort` opt — `agent(prompt, { model, effort, ... })`. The
+  script's `effortOpt(model, effort)` helper returns `{ effort }` or `{}`
+  (omitted for `haiku` / anything that clamps to empty). No keyword injected.
+- **Fallback backend** (`agent-fallback.md`, Agent-tool path): the `Agent`
+  tool does NOT accept `effort`, so the clamped value is injected as a keyword
+  at the **top** of the subagent prompt via the table below.
+
+| `effort` value | Fallback keyword to inject |
 |---|---|
 | `low` | _(no keyword — omit the line entirely)_ |
 | `medium` | `Think.` |
@@ -144,30 +150,29 @@ hook accepts `effort` at invocation time; both accept only `model`.
 Claude Code Workflow multi-agent opt-in keyword. `max` is the ceiling.)
 
 **Effort is not uniform across models.** Each model accepts a different
-range, so the keyword is resolved against the model's valid ladder and
-**rounded down** to the highest level that model supports:
+range, so effort is resolved against the model's valid ladder and
+**rounded down** to the highest level that model supports — on both backends:
 
 | Model | Valid effort ladder |
 |---|---|
-| `haiku` | _(none — never inject a keyword regardless of the config value)_ |
+| `haiku` | _(none — no effort passed / no keyword injected, regardless of config)_ |
 | `sonnet` | `low` / `medium` / `high` / `max` (no `xhigh`) |
 | `opus` / `fable` / `mythos` | `low` / `medium` / `high` / `xhigh` / `max` |
 
 Clamp examples: `sonnet`+`xhigh` → `high`; `sonnet`+`max` → `max`;
-`haiku`+anything → no keyword; `opus`+`xhigh` → `xhigh`.
+`haiku`+anything → omitted; `opus`+`xhigh` → `xhigh`.
 
-Define `{effort_keyword(role_or_type)}` as: take the role/type's
-**model AND effort**, clamp the effort to that model's ladder, then map
-via the keyword table. Empty string for `low`, for `haiku`, or for any
-value that clamps to `low`. The workflow script does this in
-`normalizeEffort(model, effort)`; the fallback orchestrator applies the
-same clamp by hand.
+Both backends share the clamp. The workflow script does it in
+`normalizeEffort(model, effort)`, then `effortOpt` wraps the result as an opt;
+the fallback orchestrator applies the same clamp by hand, then maps to the
+keyword table above. `{effort_keyword(role_or_type)}` in `agent-fallback.md`
+means: take the role/type's **model AND effort**, clamp, then map via the
+keyword table — empty for `low`, `haiku`, or any value that clamps to empty.
 
-Note: roles routed to `fable` (Claude Fable 5) use adaptive thinking —
-the keyword has limited effect there. Inject it anyway for consistency.
-`mythos` (Mythos 5) is restricted to Project Glasswing accounts; if the
-account lacks access the spawn fails the same way an inaccessible `opus`
-does.
+Note: roles routed to `fable` (Claude Fable 5) use adaptive thinking — effort
+has limited effect there. Pass/inject it anyway for consistency. `mythos`
+(Mythos 5) is restricted to Project Glasswing accounts; if the account lacks
+access the spawn fails the same way an inaccessible `opus` does.
 
 ### Defaults & hints
 
@@ -300,7 +305,6 @@ export const meta = {
   ],
 }
 
-const EFFORT_KEYWORD = { low: '', medium: 'Think.', high: 'Think hard.', xhigh: 'Think harder.', max: 'Ultrathink.' }
 // Per-model valid effort ladders. haiku takes no effort; sonnet has no xhigh.
 const EFFORT_LADDER = {
   haiku: [],
@@ -311,7 +315,7 @@ const EFFORT_LADDER = {
 }
 const EFFORT_RANK = { low: 0, medium: 1, high: 2, xhigh: 3, max: 4 }
 // Round the requested effort DOWN to the highest level valid for the model.
-// e.g. sonnet/xhigh -> high; haiku/anything -> '' (no keyword).
+// e.g. sonnet/xhigh -> high; haiku/anything -> '' (effort omitted).
 function normalizeEffort(model, effort) {
   const ladder = EFFORT_LADDER[model] || EFFORT_LADDER.sonnet
   if (!ladder.length) return ''
@@ -323,9 +327,12 @@ function normalizeEffort(model, effort) {
   }
   return best
 }
-function withEffort(model, effort, body) {
-  const kw = EFFORT_KEYWORD[normalizeEffort(model, effort)] || ''
-  return kw ? kw + '\n\n' + body : body
+// Workflow agent() accepts a native `effort` opt. Clamp to the model's valid
+// ladder first, then spread the result into the agent() opts object.
+// haiku / out-of-range -> '' -> omit the opt entirely (agent inherits session effort).
+function effortOpt(model, effort) {
+  const e = normalizeEffort(model, effort)
+  return e ? { effort: e } : {}
 }
 
 const PLAN_SCHEMA = {
@@ -371,7 +378,7 @@ const EVAL_SCHEMA = {
 }
 
 phase('Plan')
-const plannerPrompt = withEffort(args.plannerModel, args.plannerEffort,
+const plannerPrompt =
   args.plannerContent
   + '\n\n---\n\n## Handoff Schema (reference)\n\n' + args.schemaContent
   + '\n\n---\n\n## Resolved Model Routing Table (assigned by orchestrator for this sprint)\n\n' + args.routingTable
@@ -379,9 +386,9 @@ const plannerPrompt = withEffort(args.plannerModel, args.plannerEffort,
   + '\nWORKSPACE: ' + args.workspace
   + '\n\nWrite `' + args.workspace + '/sprint-plan.md` following the sprint-plan.md schema exactly.'
   + '\nUse the Resolved Model Routing Table above to assign each task\'s `model` AND `effort` fields based on its `type`.'
-  + '\nYour structured return must agree with the file: the file is the record, the return drives scheduling.')
+  + '\nYour structured return must agree with the file: the file is the record, the return drives scheduling.'
 
-const plan = await agent(plannerPrompt, { label: 'planner', phase: 'Plan', model: args.plannerModel, schema: PLAN_SCHEMA })
+const plan = await agent(plannerPrompt, { label: 'planner', phase: 'Plan', model: args.plannerModel, ...effortOpt(args.plannerModel, args.plannerEffort), schema: PLAN_SCHEMA })
 if (!plan || !plan.tasks || !plan.tasks.length) {
   return { overall: 'ERROR', reason: 'Planner returned no tasks', iteration: 1, workspace: args.workspace }
 }
@@ -402,7 +409,7 @@ function generatorPrompt(task, evalNotes) {
   if (evalNotes) {
     body += '\n\n---\n\n## Previous Evaluation (what failed and why)\n\n' + evalNotes
   }
-  return withEffort(task.model, task.effort, body)
+  return body
 }
 
 let iteration = 1
@@ -414,16 +421,16 @@ let verdict = null
 while (true) {
   log('Iteration ' + iteration + ': ' + (parallelIds.length + sequentialIds.length) + ' task(s)')
   await parallel(parallelIds.map(id => () =>
-    agent(generatorPrompt(taskById[id], evalNotes), { label: id, phase: 'Generate', model: taskById[id].model })))
+    agent(generatorPrompt(taskById[id], evalNotes), { label: id, phase: 'Generate', model: taskById[id].model, ...effortOpt(taskById[id].model, taskById[id].effort) })))
   for (const id of sequentialIds) {
-    await agent(generatorPrompt(taskById[id], evalNotes), { label: id, phase: 'Generate', model: taskById[id].model })
+    await agent(generatorPrompt(taskById[id], evalNotes), { label: id, phase: 'Generate', model: taskById[id].model, ...effortOpt(taskById[id].model, taskById[id].effort) })
   }
 
   await agent('Read every file under `' + args.workspace + '/sprint-progress/` and write `'
     + args.workspace + '/sprint-progress-summary.md` listing each task ID, its status (DONE or BLOCKED), and a one-sentence summary.',
     { label: 'aggregate', phase: 'Aggregate', model: 'haiku' })
 
-  const evalPrompt = withEffort(args.evaluatorModel, args.evaluatorEffort,
+  const evalPrompt =
     args.evaluatorContent
     + '\n\n---\n\n## Handoff Schema (reference)\n\n' + args.schemaContent
     + '\n\n---\n\n## Your Assignment\n\nWORKSPACE: ' + args.workspace + '/'
@@ -433,8 +440,8 @@ while (true) {
     + '\nWrite `' + args.workspace + '/sprint-eval.md` following the sprint-eval.md schema exactly.'
     + '\nIf your overall verdict is FAIL and this is not the final iteration, update the `iteration` field in `'
     + args.workspace + '/sprint-meta.json` to ' + (iteration + 1) + '. Do not touch the `status` field.'
-    + '\nYour structured return must agree with sprint-eval.md: the file is the record, the return drives scheduling.')
-  verdict = await agent(evalPrompt, { label: 'evaluator', phase: 'Evaluate', model: args.evaluatorModel, schema: EVAL_SCHEMA })
+    + '\nYour structured return must agree with sprint-eval.md: the file is the record, the return drives scheduling.'
+  verdict = await agent(evalPrompt, { label: 'evaluator', phase: 'Evaluate', model: args.evaluatorModel, ...effortOpt(args.evaluatorModel, args.evaluatorEffort), schema: EVAL_SCHEMA })
 
   if (!verdict || verdict.overall === 'PASS' || iteration >= args.maxIterations) break
 
@@ -472,8 +479,8 @@ path:
   the structured return drives control flow — they must agree.
 - **Generate**: `parallel_batch` runs via `parallel()` (true concurrency,
   up to 16 agents — no Agent Teams flag needed); `sequential_tasks` run
-  in listed order. Each Generator gets its task's `model` and
-  effort keyword.
+  in listed order. Each Generator gets its task's `model` and clamped
+  `effort` opt (the fallback backend injects it as a keyword instead).
 - **Aggregate**: one Haiku agent writes `{workspace}/sprint-progress-summary.md`.
 - **Evaluate**: the Evaluator ({evaluator_model}) reads the workspace
   artifacts, writes `{workspace}/sprint-eval.md`, returns
@@ -566,9 +573,9 @@ Workspace: .sprint/20260610-143022/
 - Valid models are `fable` / `mythos` / `opus` / `sonnet` / `haiku`. `fable` (Claude Fable 5) needs Fable access on the account and costs ~2× Opus 4.8; it also silently falls back to Opus 4.8 on restricted topics. `mythos` (Mythos 5) is restricted to Project Glasswing accounts — and it is NOT in Claude Code's documented model value set (`sonnet` / `opus` / `haiku` / `fable`), so on a non-Glasswing account the spawn may be rejected at parameter validation rather than failing like an inaccessible `opus`. Users with Opus or Fable access should run `/agent-harness:init` and pick `full-access` or `frontier`
 - The config routes subagents only — the orchestrator's model is whatever the user picked via `/model`. A Fable 5 main session (1M context) pairs well with Sonnet/Haiku-routed subagents
 - **`CLAUDE_CODE_SUBAGENT_MODEL` silently overrides all routing.** That env var sits FIRST in Claude Code's subagent model resolution chain (env var > per-invocation `model` > frontmatter > session model) — if the user has it set, every `model` this skill passes is ignored with no error and all subagents run on the env-var model. When routing appears to have no effect, check this env var before debugging the config
-- **Effort is delivered via prompt-level keyword injection** (`Think hard.`, `Ultrathink.`, etc.) on both backends: neither the `Agent` tool nor the workflow `agent()` hook accepts `effort` — only `model`. The keyword goes at the very top of the prompt; for `effort: low`, omit the line entirely
-- **Effort is per-model** — `haiku` takes no effort (never inject a keyword); `sonnet` has no `xhigh` (it clamps down to `high`); only `opus` / `fable` / `mythos` accept `xhigh`. The effort is rounded DOWN to the model's nearest valid level. `ultracode` is not an effort value (it is the Workflow opt-in keyword) — `max` is the ceiling
-- Fable 5 uses adaptive thinking — effort keywords have limited effect on `fable`-routed roles; treat their `effort` field as advisory
+- **Effort delivery differs by backend.** The **workflow** backend passes a native `effort` opt on `agent()` (`agent(prompt, { model, effort })`) via the `effortOpt(model, effort)` helper — no keyword. The **fallback** backend uses the `Agent` tool, which does NOT accept `effort`, so it injects a keyword (`Think hard.`, `Ultrathink.`) at the very top of the prompt. Both clamp to the model's ladder first; `haiku` / out-of-range → effort omitted (workflow) or no keyword (fallback)
+- **Effort is per-model** — `haiku` takes no effort (opt omitted / no keyword); `sonnet` has no `xhigh` (it clamps down to `high`); only `opus` / `fable` / `mythos` accept `xhigh`. The effort is rounded DOWN to the model's nearest valid level (both backends). `ultracode` is not an effort value (it is the Workflow opt-in keyword) — `max` is the ceiling
+- Fable 5 uses adaptive thinking — effort has limited effect on `fable`-routed roles; treat their `effort` field as advisory
 - **Workflow script authoring**: prompts by string concatenation only — never embed role-prompt markdown in backtick template literals (backticks and `${`-shaped text break the literal). All variable content travels via `args`
 - **No `Date.now()` / `Math.random()` / argless `new Date()` in the script** — they throw (they would break resume). The workspace timestamp and `started_at` are computed in Phase 1 and passed via `args`
 - Workflow subagents run in `acceptEdits` mode and inherit your tool allowlist — Bash commands outside the allowlist (e.g. `npm test`, build commands) still prompt mid-run with nobody watching. Before a long sprint, allowlist the build/test commands the Generators will need

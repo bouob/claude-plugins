@@ -55,7 +55,7 @@ below): `haiku` takes no effort; `sonnet` has no `xhigh`; only
 `opus` / `fable` / `mythos` accept the full ladder. An out-of-range
 value is clamped down to the model's nearest valid level rather than
 rejected — so a config is never invalid on this account, but the
-injected keyword may differ from the literal value.
+effective effort (native opt or fallback keyword) may differ from the literal value.
 
 ### Field Reference
 
@@ -118,7 +118,7 @@ while Sonnet/Haiku do the volume work.
 
 ### Effort Levels — What They Map To
 
-| Level | Prompt keyword injected | When to use |
+| Level | Fallback keyword | When to use |
 |---|---|---|
 | `low` | _(none)_ | Mechanical work: data fetch, format conversion, file enumeration |
 | `medium` | `Think.` | Default reasoning depth; most code / write / eval tasks |
@@ -126,8 +126,9 @@ while Sonnet/Haiku do the volume work.
 | `xhigh` | `Think harder.` | High-stakes design decisions, security-sensitive logic |
 | `max` | `Ultrathink.` | Reserve for the hardest problems — costs the most compute |
 
-These are the Anthropic-recognized escalation keywords for Claude Code's
-extended-thinking budget. `/sprint` injects them at the top of every
+On the **workflow backend** these levels map to the native `effort` opt on
+`agent()`. On the **fallback backend** they map to the escalation keywords
+above (Anthropic's extended-thinking triggers), injected at the top of each
 subagent prompt based on the resolved `effort` value.
 
 (`ultracode` is **not** an effort level — in Claude Code it is the
@@ -142,35 +143,41 @@ effort down** to the highest level that model supports:
 
 | Model | Valid effort ladder |
 |---|---|
-| `haiku` | _(none — effort is ignored, no keyword is ever injected)_ |
+| `haiku` | _(none — effort is ignored; opt omitted / no keyword)_ |
 | `sonnet` | `low` / `medium` / `high` / `max` (no `xhigh`) |
 | `opus` / `fable` / `mythos` | `low` / `medium` / `high` / `xhigh` / `max` |
 
 Clamp examples: `sonnet`+`xhigh` → `high`; `sonnet`+`max` → `max`;
-`haiku`+anything → no keyword; `opus`+`xhigh` → `xhigh`. This is why the
+`haiku`+anything → omitted; `opus`+`xhigh` → `xhigh`. This is why the
 `deep` effort tier (which assigns `xhigh` to planner/research) still works
 when those roles are routed to `sonnet` — it lands on `high` automatically.
 
 **Fable 5 caveat**: Fable 5 uses adaptive thinking — it budgets its own
-reasoning depth per request, so the escalation keywords have limited
-effect on `fable`-routed roles. `/sprint` still injects the keyword for
+reasoning depth per request, so escalation has limited effect on
+`fable`-routed roles. `/sprint` still passes the effort (opt or keyword) for
 consistency, but expect the model to self-budget; the `effort` field on
 a `fable` role is best treated as advisory.
 
-### Implementation Note — Why Prompt-Level Injection
+### Implementation Note — Effort Delivery Per Backend
 
-Claude Code's `Agent` tool currently accepts `model` at invocation time
-but **not** `effort` — the frontmatter `effort` field on subagents is
-only honored for statically-defined agents (`.claude/agents/*.md`), not
-for dynamic `Agent(...)` spawns used by `/sprint`. The same holds for
-the dynamic-workflow backend: the workflow runtime's `agent()` hook
-accepts `model` (`sonnet` / `opus` / `haiku` / `fable` / `mythos`) but no
-effort parameter either.
+Effort delivery depends on which backend `/sprint` runs on. Both resolve
+effort identically (clamp to the model's ladder); they differ only in how
+the clamped value reaches the subagent.
 
-v2.3.0 bridges this gap by injecting the escalation keyword at the top
-of each subagent's prompt — on both backends. When/if Anthropic extends
-either surface to accept `effort` directly, `/sprint` will switch to
-native effort transparently — the config schema stays the same.
+- **Workflow backend** (dynamic workflows, the default since v2.5.0): the
+  workflow runtime's `agent()` hook accepts a native `effort` parameter
+  (`low` / `medium` / `high` / `xhigh` / `max`) alongside `model`. `/sprint`
+  clamps, then passes it as the native opt via the `effortOpt(model, effort)`
+  helper — no keyword injected.
+- **Fallback backend** (Agent-tool path): Claude Code's `Agent` tool accepts
+  `model` at invocation time but **not** `effort` — the frontmatter `effort`
+  field is only honored for statically-defined agents (`.claude/agents/*.md`),
+  not for dynamic `Agent(...)` spawns. So the fallback clamps, then injects the
+  escalation keyword (`Think hard.`, `Ultrathink.`) at the top of each prompt.
+
+The config schema is the same for both backends. Native workflow effort landed
+in the sprint script once the Workflow tool's `agent()` hook exposed an `effort`
+opt; the fallback keyword path stays for hosts without dynamic workflows.
 
 ---
 
@@ -361,7 +368,7 @@ treat it as the role's default.
 Phase 0 of `/sprint` reads the resolved values into:
 
 - `{planner_model}`, `{planner_effort}` — substituted into the Phase 2
-  Planner subagent spawn (model arg) and prompt header (effort keyword)
+  Planner subagent spawn: `model` opt + clamped `effort` (native opt on the workflow backend, keyword on the fallback)
 - `{evaluator_model}`, `{evaluator_effort}` — same for Phase 5
 - `{generator_routing_table}` — a 4-row markdown table built from
   `models.generator.{code,write,research,collect}` with columns
@@ -372,6 +379,7 @@ The Planner receives the routing table at runtime and assigns each
 task's `model` and `effort` fields accordingly when writing
 `sprint-plan.md`.
 
-All Generator subagents spawn via Claude Code's `Agent` tool with the
-resolved `model`. Effort is injected as a prompt-level keyword at the
-top of each subagent's prompt (see "Implementation Note" above).
+Generator subagents spawn with the resolved `model` and clamped `effort`.
+On the workflow backend `effort` is a native `agent()` opt; on the fallback
+backend it is injected as a prompt-level keyword at the top of each subagent's
+prompt (see "Implementation Note" above).
