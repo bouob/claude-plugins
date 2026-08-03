@@ -51,8 +51,9 @@ Each role is `{ model, effort }`. `model` is required; `effort` defaults
 to `medium` when omitted.
 
 **`effort` valid range is per-model** (see "Per-Model Effort Validity"
-below): `haiku` takes no effort; `sonnet` has no `xhigh`; only
-`opus` / `fable` / `mythos` accept the full ladder. An out-of-range
+below): `haiku` takes no effort; `sonnet` / `opus` / `fable` / `mythos`
+all accept the full ladder including `xhigh` (Sonnet gained `xhigh`
+with Sonnet 5). An out-of-range
 value is clamped down to the model's nearest valid level rather than
 rejected — so a config is never invalid on this account, but the
 effective effort (native opt or fallback keyword) may differ from the literal value.
@@ -73,8 +74,8 @@ effective effort (native opt or fallback keyword) may differ from the literal va
 stays v4, no migration needed. Older plugin versions reading a `fable`
 config pass the string through to the Agent / Workflow model argument
 unchanged, which is harmless. `fable` maps to Claude Fable 5
-(`claude-fable-5`): 1M context, adaptive thinking, ~2× Opus 4.8 pricing
-($10/$50 per Mtok). It requires Fable access on the account — without
+(`claude-fable-5`): 1M context, adaptive thinking, ~2× Opus 5 pricing
+($10/$50 vs $5/$25 per Mtok). It requires Fable access on the account — without
 it, the subagent spawn fails the same way an inaccessible `opus` does.
 
 **`mythos`** (Mythos 5) is likewise a pure value-set extension (schema
@@ -144,13 +145,13 @@ effort down** to the highest level that model supports:
 | Model | Valid effort ladder |
 |---|---|
 | `haiku` | _(none — effort is ignored; opt omitted / no keyword)_ |
-| `sonnet` | `low` / `medium` / `high` / `max` (no `xhigh`) |
-| `opus` / `fable` / `mythos` | `low` / `medium` / `high` / `xhigh` / `max` |
+| `sonnet` / `opus` / `fable` / `mythos` | `low` / `medium` / `high` / `xhigh` / `max` |
 
-Clamp examples: `sonnet`+`xhigh` → `high`; `sonnet`+`max` → `max`;
-`haiku`+anything → omitted; `opus`+`xhigh` → `xhigh`. This is why the
-`deep` effort tier (which assigns `xhigh` to planner/research) still works
-when those roles are routed to `sonnet` — it lands on `high` automatically.
+Clamp examples: `haiku`+anything → omitted; `sonnet`+`xhigh` → `xhigh`;
+`opus`+`max` → `max`. Since Sonnet 5 every non-`haiku` model is on the full
+ladder, so the clamp is currently a no-op for them and the `deep` effort tier
+(which assigns `xhigh` to planner/research) now delivers real `xhigh` on
+`sonnet`-routed roles instead of silently landing on `high`.
 
 **Fable 5 caveat**: Fable 5 uses adaptive thinking — it budgets its own
 reasoning depth per request, so escalation has limited effect on
@@ -237,7 +238,7 @@ that scales every role up or down.
 Planner on Fable 5 costs ~2× the `full-access` planner (Opus), but it is
 one call per sprint and the foundation everything else builds on — the
 1M context lets it see the whole spec + repo before drawing ownership
-boundaries. Note Fable 5 silently falls back to Opus 4.8 on restricted
+boundaries. Note Fable 5 silently falls back to Opus 5 on restricted
 topics (cybersecurity, bio/chem), which changes cost and behavior without
 an error; for those domains prefer `full-access` (explicit `opus`+`xhigh`).
 `collect`'s `effort` is ignored (Haiku takes none).

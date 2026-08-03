@@ -7,7 +7,12 @@ or the workflow launch was rejected). The orchestrator (main session)
 runs every phase below itself, spawning subagents via the `Agent` tool.
 
 All `{placeholders}` are the values resolved in SKILL.md Phase 0 and
-Phase 1. After Phase 6 completes here, return to SKILL.md Phase 5
+Phase 1.
+
+**Checkpoint split**: run Phase 2 (Planner) below, then RETURN to
+SKILL.md Phase 3 (Plan Checkpoint) — do not spawn any Generator until
+the checkpoint approves the plan. After approval, continue with
+Phases 3–6 here. After Phase 6 completes, return to SKILL.md Phase 7
 (post-sprint actions).
 
 ---
@@ -55,6 +60,20 @@ Wait for the subagent to complete before proceeding.
 
 Read `{workspace}/sprint-plan.md`. Verify it exists and contains both `parallel_batch` and `sequential_tasks` sections.
 If the file is missing or malformed: stop and report to user — do not continue with a broken plan.
+
+Then RETURN to SKILL.md Phase 3 (Plan Checkpoint) before Phase 3 below:
+- **Approve** → continue to Phase 3 below.
+- **Edit** → the user edits `{workspace}/sprint-plan.md`; the edited file
+  is authoritative — Phase 3 below re-reads it, so no rebuild step is
+  needed on this backend (validate the required sections again first).
+- **Replan with feedback** → re-run Phase 2 above with the user's
+  feedback appended to the Planner prompt as a
+  `## User Feedback on Previous Plan` section (tell the Planner a
+  previous plan exists at `{workspace}/sprint-plan.md` and to overwrite
+  it), then return to the checkpoint.
+- **Abort** → SKILL.md Phase 3 sets `status: "blocked"`; stop here.
+- `auto` flag (`{checkpoint_mode}` = `skip`) → print the plan summary
+  and continue directly to Phase 3 below.
 
 ---
 
@@ -221,8 +240,8 @@ Read `{workspace}/sprint-meta.json` fresh (do not rely on in-memory state from e
   the orchestrator's context window on this path — expect higher main
   session token usage than the workflow backend
 - `{effort_keyword(...)}` must be clamped to the role's **model** before
-  injection: `haiku` → no keyword; `sonnet`+`xhigh` → `Think hard.` (high);
-  only `opus` / `fable` / `mythos` reach `Think harder.` (xhigh). Round
+  injection: `haiku` → no keyword; `sonnet` / `opus` / `fable` / `mythos` all
+  reach `Think harder.` (xhigh) — Sonnet gained `xhigh` with Sonnet 5. Round
   effort DOWN to the model's nearest valid level (same rule as the workflow
   backend's `normalizeEffort`)
 - The `WORKSPACE:` line you write into each Assignment is the agent's only

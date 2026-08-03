@@ -54,8 +54,12 @@ on any subscription tier or API plan without model-access errors.
   -> Resolve model + effort routing (from the /agent-harness:init config;
      safe all-Sonnet defaults if you never ran it)
   -> Initialize workspace (.sprint/<timestamp>/)
-  -> Launch a background dynamic workflow (Claude Code >= 2.1.154):
+  -> Plan workflow (Claude Code >= 2.1.154):
        Planner (model from your config) writes sprint-plan.md
+  -> PLAN CHECKPOINT (main session): review interpretation, tasks, and
+     acceptance criteria -> approve / edit the plan file / replan with
+     feedback / abort. `/sprint auto <spec>` skips this gate.
+  -> Exec workflow:
        Generators implement tasks in parallel (up to 16 concurrent)
        Aggregate progress files
        Evaluator (model from your config) writes sprint-eval.md
@@ -66,16 +70,18 @@ on any subscription tier or API plan without model-access errors.
 Every subagent spawn carries an **explicit** `model` argument resolved from
 your config — nothing relies on Claude Code's default behavior of inheriting
 the session model, and no model ever "decides for itself". Intermediate
-results stay inside the workflow run; the main session's context holds only
-the final report. When dynamic workflows are unavailable (older Claude Code,
-or disabled), `/sprint` falls back to orchestrating the same phases
-turn-by-turn with the `Agent` tool.
+results stay inside the workflow runs; the main session's context holds only
+the plan (deliberately surfaced at the checkpoint, so a wrong direction dies
+before any Generator writes a file) and the final report. When dynamic
+workflows are unavailable (older Claude Code, or disabled), `/sprint` falls
+back to orchestrating the same phases turn-by-turn with the `Agent` tool —
+the checkpoint applies on both backends.
 
 ## Skills & Commands
 
 | Name | Usage |
 |------|-------|
-| `/sprint <spec>` | Autonomous multi-agent sprint: decompose -> implement in parallel -> evaluate -> iterate, producing `.sprint/<ts>/` artifacts |
+| `/sprint <spec>` | Autonomous multi-agent sprint: decompose -> plan checkpoint (approve / edit / replan; `auto` skips) -> implement in parallel -> evaluate -> iterate, producing `.sprint/<ts>/` artifacts |
 | `/harness-engineering [task\|question]` | Multi-agent harness framework: plan, execute, design-review, route, or diagnose harness failures |
 | `/agent-harness:init` | Interactive wizard that asks which Claude models you can use and writes `~/.claude/agent-harness.json` so `/sprint` knows how to route Planner / Evaluator / Generator |
 
@@ -92,24 +98,24 @@ Config files (first existing file wins per field):
 2. `~/.claude/agent-harness.json` — user-level
 
 Each role accepts a `model` (`fable` / `mythos` / `opus` / `sonnet` / `haiku`)
-and an `effort` (`low` / `medium` / `high` / `xhigh` / `max`). Effort is injected
-as a prompt-level keyword (`Think.`, `Think hard.`, `Think harder.`,
-`Ultrathink.`) at the top of each subagent prompt — a workaround for neither
-Claude Code's `Agent` tool nor the workflow runtime's `agent()` hook accepting
-`effort` at invocation time. The schema is forward-compatible with native effort
-whenever Anthropic ships it.
+and an `effort` (`low` / `medium` / `high` / `xhigh` / `max`). On the workflow
+backend, effort is passed as a native `effort` opt on `agent()`. On the
+Agent-tool fallback backend, the `Agent` tool does not accept `effort`, so it
+is injected as a prompt-level keyword (`Think.`, `Think hard.`, `Think
+harder.`, `Ultrathink.`) at the top of each subagent prompt.
 
-Effort range is **per-model**: `haiku` takes no effort, `sonnet` has no `xhigh`,
-and only `opus` / `fable` / `mythos` accept the full ladder. An out-of-range value
-is clamped down to the model's nearest valid level (`sonnet`+`xhigh` → `high`).
+Effort range is **per-model**: `haiku` takes no effort; `sonnet` / `opus` /
+`fable` / `mythos` all accept the full ladder (Sonnet gained `xhigh` with
+Sonnet 5). An out-of-range value is clamped down to the model's nearest valid
+level.
 `ultracode` is not an effort level (it is the Workflow opt-in keyword); `max` is
 the ceiling.
 
 Model notes:
 
 - **`fable`** (Claude Fable 5): adaptive thinking makes the effort keyword
-  advisory; pricing is ~2× Opus 4.8; restricted topics silently fall back to
-  Opus 4.8.
+  advisory; pricing is ~2× Opus 5 ($10/$50 vs $5/$25 per Mtok); restricted
+  topics silently fall back to Opus 5.
 - **`mythos`** (Mythos 5): restricted to Project Glasswing accounts, and not
   in Claude Code's documented model value set (`sonnet` / `opus` / `haiku` /
   `fable`) — without access the spawn may be rejected at parameter validation.
@@ -159,8 +165,13 @@ For non-trivial specs:
 
 1. Enter plan mode first to clarify the spec, surface ambiguities, and agree on scope.
 2. Exit plan mode and run `/sprint <spec>` so the Planner starts from sharper context.
+3. Review the plan at the built-in checkpoint — the Interpretation section is
+   where the Planner's assumptions live; veto a wrong direction there, before
+   any Generator runs.
 
-Skip step 1 only when the spec is already concrete and low-risk.
+Skip step 1 only when the spec is already concrete and low-risk. Use
+`/sprint auto <spec>` to also skip step 3 for specs you have run before and
+trust end-to-end.
 
 ## Codex Support
 
@@ -288,7 +299,8 @@ inherit-mode routing for the current run.
 | v0.6.0 | Claude Code-only simplification, schema v3 for Claude routing | Released |
 | v2.2.1 | Dual-host package with separate Codex adapter | Released |
 | v2.3.0 | Per-role reasoning effort (low/medium/high/xhigh/max) for Claude, schema v4 | Released |
-| v2.5.0 | Workflow-backed sprint orchestration, `fable` (Claude Fable 5) routing, `frontier` preset | Current |
+| v2.5.0 | Workflow-backed sprint orchestration, `fable` (Claude Fable 5) routing, `frontier` preset | Released |
+| v2.6.0 | Plan checkpoint: approve / edit / replan the Planner's plan before Generators launch (`auto` skips) | Current |
 
 Codex support is intentionally separate from the Claude `/sprint` runtime. The
 Codex adapter keeps its own config files, skills, and hooks rather than mixing
