@@ -116,13 +116,13 @@ skill's domain clear.
 ## Cross-Model Stability Checklist
 
 Before publishing a skill, verify it works on the weakest model you intend to support
-(typically Sonnet 4.6). Specifically:
+(typically Sonnet 5). Specifically:
 
 - [ ] Steps are structural (`## Step N`), not tonal ("you must really make sure...")
 - [ ] Gotchas list concrete strings, not vague advice
 - [ ] Length is controlled by positive examples, not "please be concise"
 - [ ] Required scaffolding for weaker models is kept; only remove it if the skill is
-      pinned to a specific model via frontmatter `model: opus-4-7`
+      pinned to a specific model via frontmatter `model: opus-5`
 
 See `.claude/rules/cross-model-skill-design.md` (project-level) for the full pattern.
 
@@ -159,8 +159,8 @@ research, 2026-04).
   instead
 - Hook for something that's actually a preference (not a hard rule) — over-rigid,
   fights the user when context shifts
-- Removing scaffolding "because Opus 4.7 doesn't need it" without pinning the skill to
-  Opus 4.7 — silently degrades for Sonnet users
+- Removing scaffolding "because Opus 5 doesn't need it" without pinning the skill to
+  Opus 5 — silently degrades for Sonnet users
 - Tool overload (>15 in one context) — selection accuracy collapses; delegate overflow
   to subagents
 - Auto-approving destructive actions — disasters become inevitable; default to user

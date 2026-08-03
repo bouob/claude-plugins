@@ -1,13 +1,15 @@
 ---
 name: sprint
 description: >
-  Autonomous multi-agent sprint: Planner decomposes spec → Generators implement in parallel
-  via a Claude Code dynamic workflow (Agent-tool fallback when workflows are unavailable)
-  → Evaluator verifies against acceptance criteria → iterates up to 3 times.
+  Autonomous multi-agent sprint: Planner decomposes spec → plan checkpoint (user approves,
+  edits, or replans before anything is implemented; `auto` flag skips it) → Generators
+  implement in parallel via a Claude Code dynamic workflow (Agent-tool fallback when
+  workflows are unavailable) → Evaluator verifies against acceptance criteria → iterates
+  up to 3 times.
   Use when spec requires 3+ distinct tasks or multi-step implementation across files or domains.
   Do NOT use for: single-file edits, quick bug fixes, or tasks completable in one context window.
-allowed-tools: Read, Write, Bash, Glob, Grep, Agent, Workflow, TodoWrite, TodoRead
-argument-hint: "[product spec — 1 to 4 sentences describing what to build]"
+allowed-tools: Read, Write, Bash, Glob, Grep, Agent, Workflow, TodoWrite, TodoRead, AskUserQuestion
+argument-hint: "[auto] [product spec — 1 to 4 sentences describing what to build]"
 hooks:
   - event: PreToolUse
     matcher: Bash
@@ -20,21 +22,21 @@ hooks:
 
 # /sprint — Autonomous Multi-Agent Sprint
 
-## Tip — Plan Mode First (recommended)
+## Two gates, two failure classes
 
-For ambiguous specs (vague verbs, missing acceptance criteria, multiple
-possible interpretations), **enter plan mode** before invoking `/sprint`:
+A wrong direction caught after Generators run costs a full iteration to
+rescue; caught before, it costs one plan re-read. `/sprint` therefore has
+two gates in front of implementation:
 
-- Most models reason more carefully in plan mode and surface clarifying
-  questions before committing to a workspace
-- The Planner phase still runs, but starts from a sharpened spec rather
-  than the original 1-sentence prompt
-- Press `Esc` then `P` (Claude Code default) or your terminal's
-  plan-mode keybinding to enter
-
-This is a recommendation, not a requirement. Crisp specs (single
-concrete deliverable, clear acceptance) can skip plan mode and run
-`/sprint` directly.
+1. **Plan mode (optional, before `/sprint`)** — catches a wrong or
+   ambiguous **spec**. For vague verbs, missing acceptance criteria, or
+   multiple possible interpretations, enter plan mode first so the
+   Planner starts from a sharpened spec.
+2. **Plan checkpoint (Phase 3, built-in)** — catches a wrong
+   **decomposition**. The Planner's plan comes back to the main session
+   for your approval before any Generator launches. You can approve,
+   edit the plan file, replan with feedback, or abort. Prefix the spec
+   with `auto` to skip this gate and run fully autonomously.
 
 ## References (read on demand)
 
@@ -63,6 +65,12 @@ $ARGUMENTS
 ```
 
 If arguments are empty: ask the user for a spec before proceeding.
+
+**`auto` flag**: if `$ARGUMENTS` starts with the word `auto` followed by a
+space, set `{checkpoint_mode}` = `skip` and strip the flag — everything
+after it is the spec. Otherwise `{checkpoint_mode}` = `review`. All later
+references to "the spec" mean the flag-stripped text; it is what goes into
+`sprint-meta.json` and every agent prompt.
 
 ---
 
@@ -130,7 +138,7 @@ need them:
 Reasoning effort is **clamped to the model's valid ladder first** (ladder
 table below), then delivered differently on each backend:
 
-- **Workflow backend** (this file's Phase 2 script): pass the clamped value
+- **Workflow backend** (this file's Phase 2 / Phase 4 scripts): pass the clamped value
   as the native `effort` opt — `agent(prompt, { model, effort, ... })`. The
   script's `effortOpt(model, effort)` helper returns `{ effort }` or `{}`
   (omitted for `haiku` / anything that clamps to empty). No keyword injected.
@@ -156,11 +164,11 @@ range, so effort is resolved against the model's valid ladder and
 | Model | Valid effort ladder |
 |---|---|
 | `haiku` | _(none — no effort passed / no keyword injected, regardless of config)_ |
-| `sonnet` | `low` / `medium` / `high` / `max` (no `xhigh`) |
-| `opus` / `fable` / `mythos` | `low` / `medium` / `high` / `xhigh` / `max` |
+| `sonnet` / `opus` / `fable` / `mythos` | `low` / `medium` / `high` / `xhigh` / `max` |
 
-Clamp examples: `sonnet`+`xhigh` → `high`; `sonnet`+`max` → `max`;
-`haiku`+anything → omitted; `opus`+`xhigh` → `xhigh`.
+Clamp examples: `haiku`+anything → omitted; `sonnet`+`xhigh` → `xhigh`;
+`opus`+`max` → `max`. Since Sonnet 5 every non-`haiku` model is on the full
+ladder, so the clamp is currently a no-op for them — it remains as a guard.
 
 Both backends share the clamp. The workflow script does it in
 `normalizeEffort(model, effort)`, then `effortOpt` wraps the result as an opt;
@@ -231,7 +239,7 @@ read as escape noise inside agent prompts).
 
 ---
 
-## Phase 2 — Select Backend and Launch
+## Phase 2 — Plan Stage
 
 ### Step 2a — Backend check
 
@@ -244,38 +252,40 @@ If the `Workflow` tool is absent, or the launch is rejected/disabled:
 print
 > "Dynamic workflows unavailable — using Agent-tool fallback."
 
-then execute `${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/agent-fallback.md`
-(Phases 2–6 run in this session), and on completion continue at Phase 4
-of this file (skip the meta-status updates the fallback already did).
+then execute Phase 2 (Planner) of
+`${CLAUDE_PLUGIN_ROOT}/skills/sprint/references/agent-fallback.md`, come
+back to **Phase 3 (Plan Checkpoint)** of this file, and only after the
+checkpoint approves run the fallback's Phases 3–6 (they run in this
+session). On completion continue at Phase 6 of this file (skip the
+meta-status updates the fallback already did).
 
-### Step 2b — Assemble `args`
+### Step 2b — Assemble plan `args`
 
-Build a single JSON object for the workflow's `args` input. Passing all
+Build a JSON object for the plan workflow's `args` input. Passing all
 variable content through `args` (instead of pasting it into the script
 source) avoids JS string-escaping bugs and keeps the script body stable
 for `resumeFromRunId`:
 
 ```json
 {
-  "spec": "<$ARGUMENTS verbatim>",
+  "spec": "<spec, auto flag stripped>",
   "workspace": ".sprint/<timestamp>",
-  "maxIterations": 3,
   "plannerModel": "<planner_model>",
   "plannerEffort": "<planner_effort>",
-  "evaluatorModel": "<evaluator_model>",
-  "evaluatorEffort": "<evaluator_effort>",
   "routingTable": "<generator_routing_table markdown>",
   "plannerContent": "<PLANNER_CONTENT>",
-  "generatorContent": "<GENERATOR_CONTENT>",
-  "evaluatorContent": "<EVALUATOR_CONTENT>",
-  "schemaContent": "<SCHEMA_CONTENT>"
+  "schemaContent": "<SCHEMA_CONTENT>",
+  "feedback": ""
 }
 ```
+
+`feedback` is empty on the first launch; the Phase 3 "replan" path
+relaunches this same workflow with the user's feedback in it.
 
 Pass `args` as a real JSON object in the Workflow tool call — not a
 JSON-encoded string.
 
-### Step 2c — Launch the workflow
+### Step 2c — Launch the plan workflow
 
 Call the `Workflow` tool with the script template below, adapted only
 if the runtime reports an API difference. Authoring rules (violating
@@ -295,27 +305,27 @@ any of these breaks the run or its resumability):
 
 ```js
 export const meta = {
-  name: 'sprint-pge',
-  description: 'Planner -> parallel Generators -> Evaluator sprint with retry loop',
+  name: 'sprint-plan',
+  description: 'Planner decomposes the spec into a reviewable sprint plan',
   phases: [
     { title: 'Plan', detail: 'decompose spec into tasks' },
-    { title: 'Generate', detail: 'implement tasks in parallel' },
-    { title: 'Aggregate', detail: 'summarize progress files' },
-    { title: 'Evaluate', detail: 'verify acceptance criteria' },
   ],
 }
 
-// Per-model valid effort ladders. haiku takes no effort; sonnet has no xhigh.
+// Per-model valid effort ladders. haiku takes no effort; every other model
+// accepts the full low..max range (Sonnet gained `xhigh` with Sonnet 5).
 const EFFORT_LADDER = {
   haiku: [],
-  sonnet: ['low', 'medium', 'high', 'max'],
+  sonnet: ['low', 'medium', 'high', 'xhigh', 'max'],
   opus: ['low', 'medium', 'high', 'xhigh', 'max'],
   fable: ['low', 'medium', 'high', 'xhigh', 'max'],
   mythos: ['low', 'medium', 'high', 'xhigh', 'max'],
 }
 const EFFORT_RANK = { low: 0, medium: 1, high: 2, xhigh: 3, max: 4 }
 // Round the requested effort DOWN to the highest level valid for the model.
-// e.g. sonnet/xhigh -> high; haiku/anything -> '' (effort omitted).
+// e.g. haiku/anything -> '' (effort omitted). With every non-haiku model now on
+// the full ladder, clamping is a no-op for them — it stays as a guard for any
+// future model whose ladder is shorter.
 function normalizeEffort(model, effort) {
   const ladder = EFFORT_LADDER[model] || EFFORT_LADDER.sonnet
   if (!ladder.length) return ''
@@ -360,6 +370,149 @@ const PLAN_SCHEMA = {
   },
 }
 
+phase('Plan')
+let plannerPrompt =
+  args.plannerContent
+  + '\n\n---\n\n## Handoff Schema (reference)\n\n' + args.schemaContent
+  + '\n\n---\n\n## Resolved Model Routing Table (assigned by orchestrator for this sprint)\n\n' + args.routingTable
+  + '\n\n---\n\n## Your Assignment\n\nSPEC: ' + args.spec
+  + '\nWORKSPACE: ' + args.workspace
+  + '\n\nWrite `' + args.workspace + '/sprint-plan.md` following the sprint-plan.md schema exactly.'
+  + '\nUse the Resolved Model Routing Table above to assign each task\'s `model` AND `effort` fields based on its `type`.'
+  + '\nYour structured return must agree with the file: the file is the record, the return drives scheduling.'
+if (args.feedback) {
+  plannerPrompt = plannerPrompt
+    + '\n\n---\n\n## User Feedback on Previous Plan\n\n' + args.feedback
+    + '\n\nA previous plan exists at `' + args.workspace + '/sprint-plan.md`. Read it, apply the feedback, and overwrite the file.'
+}
+
+const plan = await agent(plannerPrompt, { label: 'planner', phase: 'Plan', model: args.plannerModel, ...effortOpt(args.plannerModel, args.plannerEffort), schema: PLAN_SCHEMA })
+if (!plan || !plan.tasks || !plan.tasks.length) {
+  return { overall: 'ERROR', reason: 'Planner returned no tasks', workspace: args.workspace }
+}
+return { overall: 'PLANNED', plan: plan, workspace: args.workspace }
+```
+
+Wait for the plan workflow to complete. Its return value carries the
+structured plan into Phase 3. Nothing has been implemented at this point
+— the Planner only wrote `{workspace}/sprint-plan.md`.
+
+---
+
+## Phase 3 — Plan Checkpoint (main session)
+
+The point of this phase: **a wrong direction dies here, before any
+Generator writes a file.** Rescuing a misdirected sprint after
+implementation costs a full iteration; rejecting a bad plan costs one
+read.
+
+If the plan workflow returned `overall: "ERROR"`: update
+`{workspace}/sprint-meta.json` → `status: "blocked"`, report the reason,
+and stop (a rejected model spawn usually means the config names a model
+the account lacks — suggest re-running `/agent-harness:init`).
+
+Otherwise hold the returned `plan` object as `{approved_plan}` candidate.
+Read `{workspace}/sprint-plan.md` and present the plan to the user:
+
+- **Interpretation** — verbatim from `sprint-plan.md` (this is where the
+  Planner records its reading of the spec, every assumption, and any
+  out-of-orchestrator-scope items)
+- **Acceptance criteria** — the full list
+- **Tasks** — a table: id | title | type | model + effort | depends_on
+- **Schedule** — `parallel_batch` vs `sequential_tasks`
+
+If `{checkpoint_mode}` is `skip` (`auto` flag): print the plan summary
+for the record and continue straight to Phase 4.
+
+Otherwise ask via `AskUserQuestion` (single-select) with these options:
+
+1. **核准，開始實作 (Recommended)** — `{approved_plan}` is final;
+   proceed to Phase 4.
+2. **我要修改計畫** — tell the user to edit
+   `{workspace}/sprint-plan.md` directly and say when they are done.
+   Then re-read the file and rebuild the structured plan from it
+   (Planner return shape in `handoff-schema.md`). Validate before
+   proceeding: every task has `id` / `title` / `type` / `model` /
+   `effort` / `acceptance_criteria` with enum-valid values;
+   `parallel_batch` + `sequential_tasks` together cover ALL task ids;
+   every `depends_on` references an existing task. Report what changed
+   relative to the original plan, set the rebuilt object as
+   `{approved_plan}`, and proceed to Phase 4. If validation fails, name
+   the exact broken field and let the user fix and retry.
+3. **重新規劃（附回饋）** — collect the user's feedback text, then
+   relaunch the Phase 2 plan workflow with `args.feedback` set to it
+   (all other args unchanged; this is a fresh launch, not a resume —
+   a resume would replay the cached plan). Return to the top of this
+   phase with the new plan.
+4. **放棄 sprint** — update `{workspace}/sprint-meta.json` →
+   `status: "blocked"`, report that the sprint was abandoned at the
+   plan checkpoint, and stop.
+
+Dual-channel rule at the checkpoint: after approval, `{approved_plan}`
+(the structured JSON) is what drives scheduling in Phase 4, and
+`sprint-plan.md` is the durable record the Generators and Evaluator
+read — **they must agree**. That is why the edit path rebuilds the JSON
+from the edited file rather than patching the JSON alone.
+
+---
+
+## Phase 4 — Execute Workflow (Generate → Aggregate → Evaluate)
+
+### Step 4a — Assemble exec `args`
+
+```json
+{
+  "workspace": ".sprint/<timestamp>",
+  "maxIterations": 3,
+  "plan": "<{approved_plan} — the real JSON object, not a string>",
+  "evaluatorModel": "<evaluator_model>",
+  "evaluatorEffort": "<evaluator_effort>",
+  "generatorContent": "<GENERATOR_CONTENT>",
+  "evaluatorContent": "<EVALUATOR_CONTENT>",
+  "schemaContent": "<SCHEMA_CONTENT>"
+}
+```
+
+### Step 4b — Launch the exec workflow
+
+Same authoring rules as Step 2c.
+
+```js
+export const meta = {
+  name: 'sprint-exec',
+  description: 'Parallel Generators -> Evaluator sprint with retry loop, from an approved plan',
+  phases: [
+    { title: 'Generate', detail: 'implement tasks in parallel' },
+    { title: 'Aggregate', detail: 'summarize progress files' },
+    { title: 'Evaluate', detail: 'verify acceptance criteria' },
+  ],
+}
+
+// Per-model valid effort ladders — same helpers as the plan script.
+const EFFORT_LADDER = {
+  haiku: [],
+  sonnet: ['low', 'medium', 'high', 'xhigh', 'max'],
+  opus: ['low', 'medium', 'high', 'xhigh', 'max'],
+  fable: ['low', 'medium', 'high', 'xhigh', 'max'],
+  mythos: ['low', 'medium', 'high', 'xhigh', 'max'],
+}
+const EFFORT_RANK = { low: 0, medium: 1, high: 2, xhigh: 3, max: 4 }
+function normalizeEffort(model, effort) {
+  const ladder = EFFORT_LADDER[model] || EFFORT_LADDER.sonnet
+  if (!ladder.length) return ''
+  const want = EFFORT_RANK[effort]
+  if (want === undefined) return ''
+  let best = ''
+  for (const lvl of ladder) {
+    if (EFFORT_RANK[lvl] <= want) best = lvl
+  }
+  return best
+}
+function effortOpt(model, effort) {
+  const e = normalizeEffort(model, effort)
+  return e ? { effort: e } : {}
+}
+
 const EVAL_SCHEMA = {
   type: 'object',
   required: ['overall', 'retry_tasks'],
@@ -377,22 +530,7 @@ const EVAL_SCHEMA = {
   },
 }
 
-phase('Plan')
-const plannerPrompt =
-  args.plannerContent
-  + '\n\n---\n\n## Handoff Schema (reference)\n\n' + args.schemaContent
-  + '\n\n---\n\n## Resolved Model Routing Table (assigned by orchestrator for this sprint)\n\n' + args.routingTable
-  + '\n\n---\n\n## Your Assignment\n\nSPEC: ' + args.spec
-  + '\nWORKSPACE: ' + args.workspace
-  + '\n\nWrite `' + args.workspace + '/sprint-plan.md` following the sprint-plan.md schema exactly.'
-  + '\nUse the Resolved Model Routing Table above to assign each task\'s `model` AND `effort` fields based on its `type`.'
-  + '\nYour structured return must agree with the file: the file is the record, the return drives scheduling.'
-
-const plan = await agent(plannerPrompt, { label: 'planner', phase: 'Plan', model: args.plannerModel, ...effortOpt(args.plannerModel, args.plannerEffort), schema: PLAN_SCHEMA })
-if (!plan || !plan.tasks || !plan.tasks.length) {
-  return { overall: 'ERROR', reason: 'Planner returned no tasks', iteration: 1, workspace: args.workspace }
-}
-
+const plan = args.plan
 const taskById = {}
 for (const t of plan.tasks) taskById[t.id] = t
 
@@ -468,15 +606,18 @@ inside the run.
 
 ---
 
-## Phase 3 — Inside the Workflow (for reference)
+## Phase 5 — Inside the Workflows (for reference)
 
-The script above implements the same P-G-E contract as the fallback
-path:
+The two scripts together implement the same P-G-E contract as the
+fallback path, with the checkpoint spliced between them:
 
-- **Plan**: one Planner agent ({planner_model}) writes
-  `{workspace}/sprint-plan.md` AND returns the structured task list that
-  drives scheduling. Dual-channel rule: the file is the durable record,
-  the structured return drives control flow — they must agree.
+- **Plan** (plan workflow): one Planner agent ({planner_model}) writes
+  `{workspace}/sprint-plan.md` AND returns the structured task list.
+  Dual-channel rule: the file is the durable record, the structured
+  return drives control flow — they must agree.
+- **Checkpoint** (main session, Phase 3): the user approves, edits,
+  replans, or aborts. The approved plan travels into the exec workflow
+  via `args.plan` — the exec script never re-plans.
 - **Generate**: `parallel_batch` runs via `parallel()` (true concurrency,
   up to 16 agents — no Agent Teams flag needed); `sequential_tasks` run
   in listed order. Each Generator gets its task's `model` and clamped
@@ -489,11 +630,12 @@ path:
   owns this write).
 - **Retry loop**: on FAIL with iterations remaining, only `retry_tasks`
   re-enter Generate, with the previous eval verdict appended to their
-  prompts.
+  prompts. The retry loop stays fully autonomous — the checkpoint gates
+  direction, not iteration.
 
 ---
 
-## Phase 4 — Post-Workflow Wrap-Up
+## Phase 6 — Post-Workflow Wrap-Up
 
 Read the workflow's return value `{overall, iteration, retry_tasks, tasks, workspace}`.
 Read `{workspace}/sprint-eval.md` and `{workspace}/sprint-progress-summary.md`
@@ -508,11 +650,12 @@ for report detail.
 2. Report to user: which criteria failed, what was attempted across all
    iterations, and specific next steps to take manually
 
-### If overall is ERROR (planner or evaluator died):
+### If overall is ERROR (an exec-side agent died):
 1. Update `{workspace}/sprint-meta.json` → `status: "blocked"`
 2. Report the reason; suggest re-running `/sprint` (a rejected model
    spawn usually means the config names a model the account lacks —
-   re-run `/agent-harness:init`)
+   re-run `/agent-harness:init`). Planner-side errors never reach this
+   phase — they are handled at the Phase 3 checkpoint
 
 The terminal `status` write is always done **here, by the main session**
 — never by a workflow agent. While `status` is `"running"`, the
@@ -520,9 +663,9 @@ PreToolUse hook blocks `git push`; this wrap-up is what unblocks it.
 
 ---
 
-## Phase 5 — Post-Sprint Actions (only if spec requested any)
+## Phase 7 — Post-Sprint Actions (only if spec requested any)
 
-After Phase 4 reports done, if `sprint-plan.md` Interpretation lists any
+After Phase 6 reports done, if `sprint-plan.md` Interpretation lists any
 "out-of-orchestrator scope" items the user expects performed (e.g. "push to
 GitHub when done", "open in browser"), the orchestrator handles them with a
 destructive-action gate. These run **after** the workflow returns — a
@@ -554,7 +697,7 @@ asks for confirmation.
 ## Output Example
 
 ```
-Sprint complete — Iteration 1 (workflow backend)
+Sprint complete — Iteration 1 (workflow backend, plan approved at checkpoint)
 
 Built:
   TASK-001  Login page with email/password fields     PASS
@@ -570,25 +713,29 @@ Workspace: .sprint/20260610-143022/
 ## Gotchas
 
 - Phase 0 reads model + effort config from `~/.claude/agent-harness.json` (user-level) and `./.claude/agent-harness.local.json` (project override). Missing config falls back to all-Sonnet/medium-effort — safe across every tier
-- Valid models are `fable` / `mythos` / `opus` / `sonnet` / `haiku`. `fable` (Claude Fable 5) needs Fable access on the account and costs ~2× Opus 4.8; it also silently falls back to Opus 4.8 on restricted topics. `mythos` (Mythos 5) is restricted to Project Glasswing accounts — and it is NOT in Claude Code's documented model value set (`sonnet` / `opus` / `haiku` / `fable`), so on a non-Glasswing account the spawn may be rejected at parameter validation rather than failing like an inaccessible `opus`. Users with Opus or Fable access should run `/agent-harness:init` and pick `full-access` or `frontier`
+- Valid models are `fable` / `mythos` / `opus` / `sonnet` / `haiku`. `fable` (Claude Fable 5) needs Fable access on the account and costs ~2× Opus 5 ($10/$50 vs $5/$25 per Mtok); it also silently falls back to Opus 5 on restricted topics. `mythos` (Mythos 5) is restricted to Project Glasswing accounts — and it is NOT in Claude Code's documented model value set (`sonnet` / `opus` / `haiku` / `fable`), so on a non-Glasswing account the spawn may be rejected at parameter validation rather than failing like an inaccessible `opus`. Users with Opus or Fable access should run `/agent-harness:init` and pick `full-access` or `frontier`
 - The config routes subagents only — the orchestrator's model is whatever the user picked via `/model`. A Fable 5 main session (1M context) pairs well with Sonnet/Haiku-routed subagents
 - **`CLAUDE_CODE_SUBAGENT_MODEL` silently overrides all routing.** That env var sits FIRST in Claude Code's subagent model resolution chain (env var > per-invocation `model` > frontmatter > session model) — if the user has it set, every `model` this skill passes is ignored with no error and all subagents run on the env-var model. When routing appears to have no effect, check this env var before debugging the config
 - **Effort delivery differs by backend.** The **workflow** backend passes a native `effort` opt on `agent()` (`agent(prompt, { model, effort })`) via the `effortOpt(model, effort)` helper — no keyword. The **fallback** backend uses the `Agent` tool, which does NOT accept `effort`, so it injects a keyword (`Think hard.`, `Ultrathink.`) at the very top of the prompt. Both clamp to the model's ladder first; `haiku` / out-of-range → effort omitted (workflow) or no keyword (fallback)
-- **Effort is per-model** — `haiku` takes no effort (opt omitted / no keyword); `sonnet` has no `xhigh` (it clamps down to `high`); only `opus` / `fable` / `mythos` accept `xhigh`. The effort is rounded DOWN to the model's nearest valid level (both backends). `ultracode` is not an effort value (it is the Workflow opt-in keyword) — `max` is the ceiling
+- **Effort is per-model** — `haiku` takes no effort (opt omitted / no keyword); `sonnet` / `opus` / `fable` / `mythos` all accept the full `low` → `max` ladder including `xhigh`. **Sonnet gained `xhigh` with Sonnet 5** — before that the ladder omitted it and `sonnet` + `xhigh` silently clamped down to `high`, so any routing table or config still asserting "Sonnet has no xhigh" is stale. The effort is rounded DOWN to the model's nearest valid level (both backends). `ultracode` is not an effort value (it is the Workflow opt-in keyword) — `max` is the ceiling
 - Fable 5 uses adaptive thinking — effort has limited effect on `fable`-routed roles; treat their `effort` field as advisory
 - **Workflow script authoring**: prompts by string concatenation only — never embed role-prompt markdown in backtick template literals (backticks and `${`-shaped text break the literal). All variable content travels via `args`
 - **No `Date.now()` / `Math.random()` / argless `new Date()` in the script** — they throw (they would break resume). The workspace timestamp and `started_at` are computed in Phase 1 and passed via `args`
 - Workflow subagents run in `acceptEdits` mode and inherit your tool allowlist — Bash commands outside the allowlist (e.g. `npm test`, build commands) still prompt mid-run with nobody watching. Before a long sprint, allowlist the build/test commands the Generators will need
-- A workflow cannot ask the user anything mid-run — clarifications belong in plan mode before `/sprint`, and the destructive-action gate (Phase 5) runs after the workflow returns
+- A workflow cannot ask the user anything mid-run — that is exactly why the plan is approved at the Phase 3 checkpoint **between** the plan workflow and the exec workflow. Clarifications during Generate/Evaluate still cannot happen, so the approved plan must be decision-complete; spec-level ambiguity belongs in plan mode before `/sprint`, and the destructive-action gate (Phase 7) runs after the exec workflow returns
+- `auto` prefix on the spec (`/sprint auto <spec>`) skips the Phase 3 checkpoint — the pre-v2.6 fully autonomous behavior. The flag is stripped before the spec is recorded in `sprint-meta.json`
+- **Two workflow runs per sprint** (plan + exec), each with its own runId. Resume the half that failed. Resuming the exec run replays its cached `args.plan` — a plan change requires a fresh Phase 4 launch with new args, not a resume; likewise the Phase 3 replan path relaunches the plan workflow fresh (a resume would replay the cached plan)
+- If the user walks away at the checkpoint, `sprint-meta.json` stays `"status": "running"` and the hook keeps blocking `git push` — resolve the checkpoint (approve or abandon) to unblock
+- At the checkpoint's edit path, the user-edited `sprint-plan.md` is authoritative — rebuild the structured plan from the file and validate (coverage, enums, depends_on) before launching Phase 4; never launch with a JSON that disagrees with the file
 - `parallel()` runs at most 16 agents concurrently; larger batches queue automatically. Planner guidance already caps practical batch size well below this
 - **If a workflow run is stopped or crashes, `sprint-meta.json` stays `"status": "running"` and the hook keeps blocking `git push`.** Recover by resuming the run (`/workflows` → resume, or relaunch with `resumeFromRunId`) or by manually setting `status` to `"blocked"`
 - Workspace path is `.sprint/<timestamp>/` — always relative; never put absolute Windows paths (backslashes) into agent prompts
 - `.sprint/` is gitignored in Phase 1 by the main session — never delegated to an agent; sprint artifacts are local-only by default, do not commit them
 - On the workflow backend, agents receive the `{workspace}` path and read artifacts themselves (the script has no filesystem access). On the fallback backend, the orchestrator pastes full file content into prompts — see `agent-fallback.md`
 - Generator subagents must NOT commit or push — the prompt forbids it and the PreToolUse hook blocks `git push` during any active sprint
-- `sprint-meta.json` write responsibilities: main session writes `"running"` (Phase 1) and the terminal `"done"` / `"blocked"` (Phase 4); the Evaluator agent bumps `iteration` on FAIL. No other writer
-- If the Planner returns no tasks or a malformed plan, the script returns `overall: "ERROR"` — report to user rather than continuing
+- `sprint-meta.json` write responsibilities: main session writes `"running"` (Phase 1), `"blocked"` on checkpoint abort or plan ERROR (Phase 3), and the terminal `"done"` / `"blocked"` (Phase 6); the Evaluator agent bumps `iteration` on FAIL. No other writer
+- If the Planner returns no tasks or a malformed plan, the plan workflow returns `overall: "ERROR"` — handled at the Phase 3 checkpoint (status → `"blocked"`, report, stop); the exec workflow never launches
 - When retrying, Generators receive the structured plan AND the failed eval verdict so they know exactly what failed and why
 - If spec mentions a target folder (e.g. "build under sprint/foo/"), Planner will overwrite existing files in that folder by default — Interpretation must explicitly state "existing files at <path> will be overwritten; if you intended to keep them, abort and rerun with `do not overwrite existing files in <path>` in the spec"
-- **v2.5.0 moved orchestration to the dynamic-workflow backend** (Claude Code ≥ 2.1.154). The Agent-tool path including the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` check survives only in `references/agent-fallback.md`. v2.3.0 added per-role `effort` (schema v4; v1 / v2 / v3 auto-lift). v0.4.x–v0.5.x multi-host (Codex / Auggie) was rolled back in v0.6.0
+- **v2.6.0 added the plan checkpoint**: the Planner runs in its own plan workflow, the main session gates the plan (approve / edit / replan / abort) before the Generate→Evaluate exec workflow launches; `auto` restores the old single-shot behavior. This mirrors the Codex adapter's Planning Gate. v2.5.0 moved orchestration to the dynamic-workflow backend (Claude Code ≥ 2.1.154); the Agent-tool path including the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` check survives only in `references/agent-fallback.md`. v2.3.0 added per-role `effort` (schema v4; v1 / v2 / v3 auto-lift). v0.4.x–v0.5.x multi-host (Codex / Auggie) was rolled back in v0.6.0
 - Plan-mode tip is printed by Phase 0 every run. Users running automated sprints can ignore it; users with vague specs should heed it before launching the workspace

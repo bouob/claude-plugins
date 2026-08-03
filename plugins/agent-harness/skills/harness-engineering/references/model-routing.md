@@ -5,10 +5,13 @@ Reserve Fable 5 / Opus for work that genuinely needs their reasoning depth; defa
 to Sonnet; use Haiku only for mechanical work where synthesis isn't required.
 Effort dials in reasoning depth independently of model choice.
 
-Current lineup (2026-06): Fable 5 (`fable` — 1M context, adaptive thinking,
+Current lineup (2026-07): Fable 5 (`fable` — 1M context, adaptive thinking,
 ~2× Opus price), Mythos 5 (`mythos` — Fable-class with cyber safeguards
-lifted, **Project Glasswing accounts only**, not general API), Opus 4.8
-(`opus`), Sonnet 4.6 (`sonnet`), Haiku 4.5 (`haiku`).
+lifted, **Project Glasswing accounts only**, not general API), Opus 5
+(`opus`), Sonnet 5 (`sonnet`), Haiku 4.5 (`haiku`).
+
+List price per Mtok (input/output): Fable 5 & Mythos 5 $10/$50 · Opus 5
+$5/$25 · Sonnet 5 $3/$15 · Haiku 4.5 $1/$5.
 
 ## Primary Routing Table
 
@@ -19,7 +22,7 @@ lifted, **Project Glasswing accounts only**, not general API), Opus 4.8
 | `code` | Sonnet | high | Implementation, debugging, test writing | Medium |
 | `write` | Sonnet | high | Long-form prose, documentation, structured reports | Medium |
 | `research` | Sonnet | high | Synthesizing multiple sources, connecting concepts | Medium |
-| `collect` | Haiku | _(none)_ | Fetching data, format conversion, file discovery, simple transforms | ~15× cheaper than Sonnet; Haiku takes no effort |
+| `collect` | Haiku | _(none)_ | Fetching data, format conversion, file discovery, simple transforms | ~3× cheaper than Sonnet ($1/$5 vs $3/$15); Haiku takes no effort |
 
 ## Effort Levels
 
@@ -36,11 +39,11 @@ lifted, **Project Glasswing accounts only**, not general API), Opus 4.8
 | Model | Valid effort |
 |---|---|
 | `haiku` | none (effort ignored) |
-| `sonnet` | low / medium / high / max (no `xhigh`) |
-| `opus` / `fable` / `mythos` | low / medium / high / xhigh / max |
+| `sonnet` / `opus` / `fable` / `mythos` | low / medium / high / xhigh / max |
 
 `/sprint` clamps an out-of-range value DOWN to the model's nearest valid
-level (`sonnet`+`xhigh` → `high`). `ultracode` is not an effort level (it
+level; with every non-`haiku` model on the full ladder since Sonnet 5, that
+clamp is currently a no-op for them. `ultracode` is not an effort level (it
 is the Workflow opt-in keyword); `max` is the ceiling.
 
 Effort is otherwise orthogonal to model: `haiku/high` is cheaper than `opus/low`
@@ -81,7 +84,7 @@ short translations, format conversions.
 The orchestrator's model is whatever the user selected via `/model` — the plugin
 never sets it. **Fable 5 (1M context) is the natural orchestrator** when the
 sprint state (plan + all progress files + eval) must be held simultaneously;
-Opus 4.8 also works. Sonnet suffices for smaller orchestrations (≤7 tasks,
+Opus 5 also works. Sonnet suffices for smaller orchestrations (≤7 tasks,
 ≤200k total context).
 
 On the workflow backend this matters less: intermediate results stay inside

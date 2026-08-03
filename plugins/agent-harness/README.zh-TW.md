@@ -51,8 +51,12 @@ API 都能跑，不會撞到模型權限錯誤。
   -> 解析模型 + effort 路由（讀 /agent-harness:init 寫的 config；
      沒跑過就用全 Sonnet 安全預設）
   -> 初始化工作區（.sprint/<timestamp>/）
-  -> 啟動背景 dynamic workflow（Claude Code >= 2.1.154）：
+  -> Plan workflow（Claude Code >= 2.1.154）：
        Planner（依你 config 的模型）寫出 sprint-plan.md
+  -> 計畫 CHECKPOINT（主對話）：審閱 Interpretation、任務分解與
+     驗收條件 -> 核准 / 直接改計畫檔 / 附回饋重規劃 / 放棄。
+     `/sprint auto <spec>` 可跳過這道關卡。
+  -> Exec workflow：
        Generators 平行完成任務（最多 16 個並行）
        彙整進度檔案
        Evaluator（依你 config 的模型）寫出 sprint-eval.md
@@ -63,14 +67,16 @@ API 都能跑，不會撞到模型權限錯誤。
 每個 subagent 啟動時都帶著從 config 解析出的**顯式** `model` 參數——
 不依賴 Claude Code「繼承 session 模型」的預設行為，也沒有任何模型會
 「自己決定」。中間結果留在 workflow run 裡，主對話的 context 只保留
-最終報告。dynamic workflows 不可用時（舊版 Claude Code 或已停用），
-`/sprint` 會 fallback 成原本逐回合用 `Agent` 工具編排相同的階段。
+計畫（checkpoint 刻意讓它浮上來——方向錯誤在任何 Generator 動工前
+就地淘汰）與最終報告。dynamic workflows 不可用時（舊版 Claude Code
+或已停用），`/sprint` 會 fallback 成原本逐回合用 `Agent` 工具編排
+相同的階段——checkpoint 在兩個後端都生效。
 
 ## Skills 與 Commands
 
 | 名稱 | 用法 |
 |------|------|
-| `/sprint <spec>` | 自主多代理人 Sprint：分解 -> 平行實作 -> 評估 -> 迭代，產出 `.sprint/<ts>/` 工作區 |
+| `/sprint <spec>` | 自主多代理人 Sprint：分解 -> 計畫 checkpoint（核准 / 修改 / 重規劃；`auto` 跳過）-> 平行實作 -> 評估 -> 迭代，產出 `.sprint/<ts>/` 工作區 |
 | `/harness-engineering [任務\|問題]` | 多代理人 harness 框架：規劃、執行、設計審查、模型路由或診斷 harness 失敗 |
 | `/agent-harness:init` | 互動式 wizard，詢問你能使用哪些 Claude 模型，並寫入 `~/.claude/agent-harness.json`，讓 `/sprint` 知道如何路由 Planner / Evaluator / Generator |
 
@@ -87,21 +93,21 @@ Wizard 讓有 Opus 權限的使用者把 Planner 升級成 Opus + `high` effort�
 2. `~/.claude/agent-harness.json` — 使用者層
 
 每個角色接受 `model`（`fable` / `mythos` / `opus` / `sonnet` / `haiku`）與
-`effort`（`low` / `medium` / `high` / `xhigh` / `max`）。Effort 會以
-prompt-level keyword（`Think.`、`Think hard.`、`Think harder.`、`Ultrathink.`）
-注入每個 subagent prompt 開頭——這是因應 Claude Code 的 `Agent` 工具與
-workflow runtime 的 `agent()` 目前在呼叫時都不接受 `effort` 參數所做的橋接。
-等 Anthropic 加上原生 effort 後，schema 不必改、`/sprint` 會自動切過去。
+`effort`（`low` / `medium` / `high` / `xhigh` / `max`）。workflow 後端把
+effort 以原生 `effort` 參數傳給 `agent()`；Agent-tool fallback 後端因
+`Agent` 工具不接受 `effort`，改以 prompt-level keyword（`Think.`、
+`Think hard.`、`Think harder.`、`Ultrathink.`）注入 subagent prompt 開頭。
 
-Effort 範圍**依模型而異**：`haiku` 不吃 effort、`sonnet` 沒有 `xhigh`，只有
-`opus` / `fable` / `mythos` 支援完整階梯。超出範圍的值會向下 clamp 到該模型最近
-的合法等級（`sonnet`+`xhigh` → `high`）。`ultracode` 不是 effort 等級（它是
+Effort 範圍**依模型而異**：`haiku` 不吃 effort；`sonnet` / `opus` / `fable` /
+`mythos` 皆支援完整階梯（Sonnet 自 Sonnet 5 起支援 `xhigh`）。超出範圍的值會向下
+clamp 到該模型最近的合法等級。`ultracode` 不是 effort 等級（它是
 Workflow opt-in 關鍵字）；`max` 是上限。
 
 模型注意事項：
 
 - **`fable`**（Claude Fable 5）：採 adaptive thinking，effort keyword 對它
-  僅供參考；定價約為 Opus 4.8 的 2 倍；受限主題會靜默 fallback 到 Opus 4.8。
+  僅供參考；定價約為 Opus 5 的 2 倍（$10/$50 對 $5/$25 per Mtok）；受限主題會
+  靜默 fallback 到 Opus 5。
 - **`mythos`**（Mythos 5）：受 Project Glasswing 限制，且不在 Claude Code
   文件記載的模型值集（`sonnet` / `opus` / `haiku` / `fable`）內——無權限時
   spawn 可能在參數驗證層就被拒絕。
@@ -148,8 +154,11 @@ Planner 是整輪槓桿最大的單一呼叫，所以給最強的模型 + effort
 
 1. 先進 plan mode，把需求、歧義與範圍談清楚。
 2. 離開 plan mode 後再跑 `/sprint <spec>`，讓 Planner 從較乾淨的上下文出發。
+3. 在內建 checkpoint 審計畫——Planner 的假設全寫在 Interpretation 區塊，
+   方向錯誤在這裡否決，任何 Generator 都還沒動工。
 
-只有在規格已經非常明確、風險很低時，才建議跳過第一步。
+只有在規格已經非常明確、風險很低時，才建議跳過第一步。已經跑過、
+端到端信任的規格可用 `/sprint auto <spec>` 連第三步一起跳過。
 
 ## Codex 支援
 
@@ -276,7 +285,8 @@ $agent-harness:agent-harness-sprint <approved plan>
 | v0.6.0 | 回到 Claude Code 單平台、Claude 路由 schema v3 | 已發布 |
 | v2.2.1 | 雙平台套件，加入獨立的 Codex adapter | 已發布 |
 | v2.3.0 | Claude 端加入每角色 reasoning effort（low/medium/high/xhigh/max），schema v4 | 已發布 |
-| v2.5.0 | Sprint 改用 workflow 後端編排、加入 `fable`（Claude Fable 5）路由與 `frontier` preset | 目前版本 |
+| v2.5.0 | Sprint 改用 workflow 後端編排、加入 `fable`（Claude Fable 5）路由與 `frontier` preset | 已發布 |
+| v2.6.0 | 計畫 checkpoint：Generators 動工前核准 / 修改 / 重規劃 Planner 的計畫（`auto` 跳過） | 目前版本 |
 
 Codex 支援刻意與 Claude `/sprint` runtime 分離。Codex adapter 維持自己的
 設定檔、skills 與 hooks，不把 Claude 與 Codex 的引擎路由混在同一套 schema 內。

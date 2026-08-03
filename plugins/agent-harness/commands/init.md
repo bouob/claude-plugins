@@ -177,9 +177,8 @@ preview:
 | Generator (research)| xhigh  |
 | Generator (collect) | low    |
 ```
-Note: `xhigh` only applies if the role's model is `opus` / `fable` /
-`mythos`. On a `sonnet`-routed role it clamps to `high` (Sonnet has no
-`xhigh`); on `haiku` all effort is ignored.
+Note: `xhigh` applies on `sonnet` / `opus` / `fable` / `mythos` (Sonnet
+gained `xhigh` with Sonnet 5); on `haiku` all effort is ignored.
 
 ## Step 4 — Build and Preview the Config
 
@@ -294,15 +293,15 @@ After writing, tell the user:
 - `max` effort is intentionally not in any preset — reserve it for one-off
   hand-edits when you genuinely need ultrathink on a specific role
 - **Effort is per-model.** `haiku` takes no effort (the field is ignored —
-  never injected). `sonnet` has no `xhigh` (it clamps to `high`). Only
-  `opus` / `fable` / `mythos` accept `xhigh`. `/sprint` rounds an
-  out-of-range effort DOWN to the model's nearest valid level, so a config
-  is never rejected for this — but do not promise the user `xhigh` on a
-  Sonnet role. `ultracode` is not an effort level
+  never injected). `sonnet` / `opus` / `fable` / `mythos` all accept the
+  full `low` → `max` ladder including `xhigh` (Sonnet gained `xhigh` with
+  Sonnet 5). `/sprint` rounds an out-of-range effort DOWN to the model's
+  nearest valid level, so a config is never rejected for this.
+  `ultracode` is not an effort level
 - `fable` (Claude Fable 5) uses adaptive thinking — the injected effort
   keyword has limited effect on fable-routed roles; the `effort` field
-  there is advisory. Fable also costs ~2× Opus 4.8 ($10/$50 per Mtok)
-  and silently falls back to Opus 4.8 on restricted topics
+  there is advisory. Fable also costs ~2× Opus 5 ($10/$50 vs $5/$25 per
+  Mtok) and silently falls back to Opus 5 on restricted topics
   (cybersecurity, bio/chem) — behavior and cost change without an error
 - `mythos` (Mythos 5) is restricted to Project Glasswing accounts and is
   not on the general API. Only offer/write it if the user states they have

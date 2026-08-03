@@ -99,7 +99,8 @@ See `references/model-routing.md`. Quick rule:
 | Cyber-safeguards-lifted frontier (Glasswing accounts only) | Mythos 5 |
 
 Override only with reason in the plan. Effort is per-model: `haiku` takes
-none, `sonnet` has no `xhigh`, only `opus`/`fable`/`mythos` reach `xhigh`.
+none; `sonnet`/`opus`/`fable`/`mythos` all reach `xhigh` (Sonnet gained it
+with Sonnet 5).
 
 ### Step 5 — Decide Inline vs Subagent vs Workflow
 

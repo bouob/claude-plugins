@@ -7,6 +7,11 @@ This file records Claude Code-side changes suggested while adding Codex support.
 Make effort model-aware and add `mythos` to the routing value set; upgrade the
 recommended presets toward quality on the highest-leverage roles.
 
+> **Superseded (2026-07-29)**: the `sonnet` ladder below was accurate when shipped,
+> but Sonnet 5 added `xhigh`. Every non-`haiku` model is now on the full ladder and
+> `EFFORT_LADDER` has been corrected — until that fix, `sonnet`+`xhigh` was silently
+> clamped down to `high`. This section is kept as the historical record.
+
 Changes shipped:
 
 - Effort is no longer a uniform enum. Each model has its own valid ladder —
