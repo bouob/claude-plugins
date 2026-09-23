@@ -59,7 +59,9 @@ function parseArgs() {
 // Supported databases
 // ---------------------------------------------------------------------------
 
-const SUPPORTED_DATABASES = ['projects', 'todo', 'inbox', 'knowledge'];
+// To-Do is deliberately not synced: gbrain has no canonical `todo` type, and a
+// completed task carries no body worth retrieving. Read tasks from Notion directly.
+const SUPPORTED_DATABASES = ['projects', 'inbox', 'knowledge'];
 
 /**
  * Resolve which databases to sync based on the --database flag.

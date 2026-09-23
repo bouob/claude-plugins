@@ -1,5 +1,7 @@
 # gbrain-notion-sync
 
+[繁體中文](./README.zh-TW.md)
+
 [![secret-scan](https://github.com/bouob/gbrain-notion-sync/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/bouob/gbrain-notion-sync/actions/workflows/secret-scan.yml)
 [![typecheck](https://github.com/bouob/gbrain-notion-sync/actions/workflows/typecheck.yml/badge.svg)](https://github.com/bouob/gbrain-notion-sync/actions/workflows/typecheck.yml)
 [![release](https://img.shields.io/github/v/release/bouob/gbrain-notion-sync)](https://github.com/bouob/gbrain-notion-sync/releases)
@@ -18,9 +20,9 @@ one at a time. That works for "open this page", but breaks down when you ask
 things like "find me everything across my second brain related to X" — Notion's
 API has no vector search, no graph traversal, and a 3 req/sec rate limit.
 
-This plugin mirrors your four PAI databases (Projects, To-Do, Inbox, Knowledge
-Base) into a local [gbrain](https://github.com/garrytan/gbrain) so Claude Code
-can use gbrain's MCP tools instead:
+This plugin mirrors your knowledge-bearing PAI databases (Projects, Inbox,
+Knowledge Base) into a local [gbrain](https://github.com/garrytan/gbrain) so
+Claude Code can use gbrain's MCP tools instead:
 
 - **Hybrid search** — keyword + (optional) vector + reciprocal rank fusion
 - **Graph traversal** — backlinks, entities, timeline, salience
@@ -39,8 +41,13 @@ You keep editing Notion normally; the plugin keeps the local mirror fresh.
 ### 1. Install the plugin in Claude Code
 
 ```text
+# Via the bouob-plugins marketplace (recommended)
+/plugin marketplace add bouob/claude-plugins
+/plugin install gbrain-notion-sync@bouob-plugins
+
+# Or directly from this repo
 /plugin marketplace add bouob/gbrain-notion-sync
-/plugin install gbrain-notion-sync@bouob
+/plugin install gbrain-notion-sync@gbrain-notion-sync
 ```
 
 ### 2. Install dependencies in the plugin directory

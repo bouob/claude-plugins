@@ -17,7 +17,7 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 const execFileAsync = promisify(execFile);
 
@@ -236,6 +236,40 @@ async function runGbrainRaw(args: string[]): Promise<string> {
   return stdout;
 }
 
+/** Upper bound on how long a single write keeps replaying a pending receipt. */
+const WRITE_PENDING_DEADLINE_MS = 60_000;
+
+/**
+ * gbrain >= 0.51 accepts a write, then reports `write_pending` (CLI exit 1 /
+ * MCP isError) when it has not committed within its sync window. Returns the
+ * advised retry delay for that case, or null for any other failure.
+ */
+function writePendingRetryAfter(err: unknown): number | null {
+  const e = err as { stdout?: string; stderr?: string; message?: string } | null;
+  const text = `${e?.stdout ?? ''}\n${e?.stderr ?? ''}\n${e?.message ?? ''}`;
+  if (!/"error":\s*"write_pending"|\[write_pending\]/.test(text)) return null;
+  const m = /"retry_after_ms":\s*(\d+)/.exec(text);
+  return m ? Number(m[1]) : 1000;
+}
+
+/**
+ * Replay a write while gbrain reports it pending. The caller must bake the
+ * same request_id into every attempt so a replay recovers the original
+ * receipt instead of submitting a second write.
+ */
+async function withWriteRetry<T>(attempt: () => Promise<T>): Promise<T> {
+  const deadline = Date.now() + WRITE_PENDING_DEADLINE_MS;
+  for (;;) {
+    try {
+      return await attempt();
+    } catch (err) {
+      const wait = writePendingRetryAfter(err);
+      if (wait === null || Date.now() + wait > deadline) throw err;
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
+}
+
 /** Strip a single layer of matching single/double quotes. */
 function unquote(s: string): string {
   if (s.length >= 2) {
@@ -400,17 +434,31 @@ function serializeHttpPage(page: HttpGetPageResponse): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * Notion database (the `source` metadata key) -> gbrain canonical page type.
+ * gbrain defaults an unspecified type to `concept`, so omitting this lands
+ * every synced page as a concept no matter which database it came from.
+ */
+const SOURCE_TYPE: Record<string, string> = {
+  projects: 'project',
+  knowledge: 'note',
+  inbox: 'note',
+};
+
+/**
  * Build a YAML frontmatter block from a page's id, title, and metadata.
  * Used internally by putPage to produce gbrain-compatible content.
  */
 function buildFrontmatter(page: GbrainPage): string {
+  const source = typeof page.metadata?.source === 'string' ? page.metadata.source : '';
   const lines = [
     '---',
     `notion_page_id: ${page.id}`,
     `title: ${JSON.stringify(page.title)}`,
   ];
+  const type = SOURCE_TYPE[source];
+  if (type) lines.push(`type: ${type}`);
   for (const [k, v] of Object.entries(page.metadata ?? {})) {
-    if (k === 'notion_page_id' || k === 'title') continue;
+    if (k === 'notion_page_id' || k === 'title' || k === 'type') continue;
     lines.push(`${k}: ${JSON.stringify(v)}`);
   }
   lines.push('---', '');
@@ -430,10 +478,7 @@ function buildFrontmatter(page: GbrainPage): string {
  */
 export async function putPage(page: GbrainPage): Promise<PutPageResult> {
   const fullContent = buildFrontmatter(page) + page.content;
-  if (isHttpMode()) {
-    return callMcpHttp<PutPageResult>('put_page', { slug: page.id, content: fullContent });
-  }
-  return runGbrain<PutPageResult>(['put', page.id, '--content', fullContent]);
+  return putRawPage(page.id, fullContent);
 }
 
 /**
@@ -452,10 +497,24 @@ export async function putRawPage(
   slug: string,
   fullContent: string,
 ): Promise<PutPageResult> {
+  // Notion is the source of truth for mirrored pages, so overwrite with force
+  // rather than a read-revision precondition (required since gbrain 0.51).
+  const requestId = randomUUID();
   if (isHttpMode()) {
-    return callMcpHttp<PutPageResult>('put_page', { slug, content: fullContent });
+    return withWriteRetry(() =>
+      callMcpHttp<PutPageResult>('put_page', {
+        slug,
+        content: fullContent,
+        force: true,
+        request_id: requestId,
+      }),
+    );
   }
-  return runGbrain<PutPageResult>(['put', slug, '--content', fullContent]);
+  return withWriteRetry(() =>
+    runGbrain<PutPageResult>([
+      'put', slug, '--content', fullContent, '--force', '--request-id', requestId,
+    ]),
+  );
 }
 
 /**
@@ -524,11 +583,16 @@ export async function listPages(
  * @param id - The page slug to remove.
  */
 export async function deletePage(id: string): Promise<void> {
+  const requestId = randomUUID();
   if (isHttpMode()) {
-    await callMcpHttp<unknown>('delete_page', { slug: id });
+    await withWriteRetry(() =>
+      callMcpHttp<unknown>('delete_page', { slug: id, force: true, request_id: requestId }),
+    );
     return;
   }
-  await runGbrainRaw(['delete', id]);
+  await withWriteRetry(() =>
+    runGbrainRaw(['delete', id, '--force', '--request-id', requestId]),
+  );
 }
 
 /**

@@ -24,10 +24,10 @@ const ROOT = path.resolve(__dirname, '..');
 
 config({ path: path.join(ROOT, '.env') });
 
+// NOTION_DB_TODO is intentionally absent — the To-Do database is no longer synced.
 const REQUIRED_KEYS = [
   'NOTION_TOKEN',
   'NOTION_DB_PROJECTS',
-  'NOTION_DB_TODO',
   'NOTION_DB_INBOX',
   'NOTION_DB_KNOWLEDGE',
 ];

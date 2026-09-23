@@ -5,7 +5,7 @@
 Trigger a one-shot Notion → gbrain pull for one or all configured PAI databases.
 
 This subagent is responsible for:
-1. Reading pages from Notion databases (Projects, To-Do, Inbox, 知識庫)
+1. Reading pages from Notion databases (Projects, Inbox, 知識庫 — To-Do is not synced)
 2. Converting Notion blocks to Markdown via the block-converter layer
 3. Writing the converted pages into gbrain via the gbrain-adapter layer
 
@@ -31,12 +31,12 @@ node scripts/sync-pull.mjs --database projects
 node scripts/sync-pull.mjs --database inbox --dry-run
 ```
 
-Supported `--database` values: `projects`, `todo`, `inbox`, `knowledge`
+Supported `--database` values: `projects`, `inbox`, `knowledge`
 
 ## Dependencies
 
 - `NOTION_TOKEN` must be set in `.env`
-- `NOTION_DB_PROJECTS`, `NOTION_DB_TODO`, `NOTION_DB_INBOX`, `NOTION_DB_KNOWLEDGE` env vars must contain the Notion database IDs
+- `NOTION_DB_PROJECTS`, `NOTION_DB_INBOX`, `NOTION_DB_KNOWLEDGE` env vars must contain the Notion database IDs
 - Compiled dist/ must exist (`bun run build`)
 - gbrain must be installed and accessible on PATH (see RUNBOOK.md)
 

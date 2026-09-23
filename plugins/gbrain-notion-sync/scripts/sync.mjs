@@ -28,7 +28,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 config({ path: path.join(ROOT, '.env') });
 
-const SUPPORTED_DATABASES = ['projects', 'todo', 'inbox', 'knowledge'];
+// To-Do is deliberately not synced (see sync-pull.mjs) — keep both sides aligned.
+const SUPPORTED_DATABASES = ['projects', 'inbox', 'knowledge'];
 /** Databases an agent-created page is allowed to be routed into. */
 const CREATABLE_DATABASES = ['inbox', 'knowledge'];
 
@@ -184,19 +185,54 @@ async function main() {
     console.log(`[sync] Notion ${dbName}: ${pages.length} pages`);
   }
 
-  // 2. List gbrain pages.
-  const gbrainPages = await adapter.listPages();
-  console.log(`[sync] gbrain: ${gbrainPages.length} pages`);
-
   const syncState = syncStateMod.openSyncState(path.join(ROOT, 'sync-state.db'));
   const stats = { skip: 0, to_notion: 0, conflict: 0, created: 0, warn: 0, error: 0 };
 
+  // 2. Build the reconcile work-list.
+  //
+  // `gbrain list` caps its output at 100 rows regardless of --limit, so a page
+  // that has not been touched recently drops out of the listing entirely. Driving
+  // push off the listing alone therefore skipped every already-synced page once
+  // the brain grew past 100 — silently, reporting skip=0 as if all were current.
+  //
+  // sync-state knows every page we have ever synced, so it is the authority for
+  // already-tracked pages. The (capped) gbrain listing is still needed to discover
+  // NEW pages — ones with no notion_page_id — but those are freshly written by
+  // definition, so they sit at the top of an updated_desc listing and the cap
+  // cannot hide them.
+  const tracked = syncState
+    .allPages()
+    .filter((r) => targets.includes(r.notion_database));
+  const trackedSlugs = new Set(tracked.map((r) => r.local_slug));
+
+  const listed = await adapter.listPages();
+  const slugs = [...new Set([...trackedSlugs, ...listed.map((p) => p.slug)])];
+
+  console.log(
+    `[sync] gbrain: ${listed.length} listed (100-row cap), ` +
+      `${trackedSlugs.size} tracked in sync-state → ${slugs.length} to reconcile`,
+  );
+
   const ctx = { notion, adapter, converter, mdToNotion, props, syncState, schemas, dbIds, notionById, stats, dryRun };
 
-  // 3. Reconcile each gbrain page.
-  for (const gp of gbrainPages) {
+  // 3. Reconcile each page.
+  for (const slug of slugs) {
     try {
-      const detail = await adapter.getPage(gp.slug);
+      let detail;
+      try {
+        detail = await adapter.getPage(slug);
+      } catch (err) {
+        // A tracked page that no longer resolves was deleted on the gbrain side.
+        // That is not a sync error — push never writes gbrain, so leave Notion
+        // alone and let the operator decide.
+        if (trackedSlugs.has(slug)) {
+          stats.warn++;
+          console.warn(`[sync] tracked page not in gbrain (deleted locally?): ${slug}`);
+          continue;
+        }
+        throw err;
+      }
+
       const fm = detail.frontmatter;
       const dbName = typeof fm.source === 'string' ? fm.source : null;
       if (!dbName || !targets.includes(dbName)) continue; // not a target PAI page
@@ -205,13 +241,13 @@ async function main() {
         typeof fm.notion_page_id === 'string' ? fm.notion_page_id : null;
 
       if (!notionPageId) {
-        await handleNewPage(ctx, gp.slug, detail, dbName);
+        await handleNewPage(ctx, slug, detail, dbName);
       } else {
-        await reconcilePage(ctx, gp.slug, detail, dbName, notionPageId);
+        await reconcilePage(ctx, slug, detail, dbName, notionPageId);
       }
     } catch (err) {
       stats.error++;
-      console.error(`[sync] ERROR on ${gp.slug}: ${err.message}`);
+      console.error(`[sync] ERROR on ${slug}: ${err.message}`);
     }
   }
 

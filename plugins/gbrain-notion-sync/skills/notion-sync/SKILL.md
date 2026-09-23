@@ -1,8 +1,8 @@
 ---
 name: notion-sync
 description: >
-  Sync the Notion PAI second-brain (Projects, To-Do, Inbox, Knowledge Base)
-  with the local gbrain knowledge graph. `pull` mirrors Notion into gbrain
+  Sync the Notion PAI second-brain (Projects, Inbox, Knowledge Base — To-Do is
+  not synced) with the local gbrain knowledge graph. `pull` mirrors Notion into gbrain
   (down); `push` sends local gbrain edits up to Notion (up-only — a page
   changed on the Notion side is left for the next pull, never clobbered).
   Includes interactive first-time init.
@@ -61,9 +61,13 @@ overwrites a Notion page that changed since the last sync.
 ### `/notion-sync init`
 
 Interactive first-time setup. Walks the user through creating `.env` with
-all five required keys (Notion token + four DB IDs), validating each as it
+all four required keys (Notion token + three DB IDs), validating each as it
 is collected. Use this instead of asking the user to manually copy
 `.env.example` and edit values.
+
+The To-Do database is deliberately not synced — gbrain has no canonical `todo`
+page type and a completed task has no retrievable body, so syncing it just fills
+the brain with empty pages. Do not collect `NOTION_DB_TODO`.
 
 The flow is conversational: ask one thing at a time, validate via API
 call before moving on, and write `.env` only once everything checks out.
@@ -106,9 +110,9 @@ curl -s -o /dev/null -w "%{http_code}" \
 Expected: `200`. If `401`, the token is wrong — ask user to re-paste. If
 any other code, report it and let the user decide.
 
-## Step 3 — Collect the four `NOTION_DB_*` IDs
+## Step 3 — Collect the three `NOTION_DB_*` IDs
 
-For each of the four databases (Projects, To-Do, Inbox, Knowledge Base),
+For each of the three synced databases (Projects, Inbox, Knowledge Base),
 ask in chat:
 
 > "Paste the Notion page URL OR the 32-character UUID for the **Projects**
@@ -142,7 +146,7 @@ Expected: `200`. If `404`, either the UUID is wrong OR the integration is
 not shared with this database — tell the user to go to Notion (DB page >
 ... > Connections > Add) and re-validate. Do not move on until `200`.
 
-Repeat for Todo, Inbox, Knowledge.
+Repeat for Inbox and Knowledge. (Do not ask for To-Do — it is not synced.)
 
 ## Step 4 — Optional: install the scheduled task
 
@@ -164,7 +168,6 @@ the user-pasted token; the DB IDs and URLs are not sensitive.
 cat > "$CLAUDE_PLUGIN_ROOT/.env" <<EOF
 NOTION_TOKEN=<collected>
 NOTION_DB_PROJECTS=<formatted UUID>
-NOTION_DB_TODO=<formatted UUID>
 NOTION_DB_INBOX=<formatted UUID>
 NOTION_DB_KNOWLEDGE=<formatted UUID>
 
@@ -181,14 +184,14 @@ cd "$CLAUDE_PLUGIN_ROOT" && bun install --ignore-scripts && bun run build
 node scripts/doctor.mjs
 ```
 
-All doctor checks should PASS (five env-key checks + gbrain/Notion probes).
+All doctor checks should PASS (four env-key checks + gbrain/Notion probes).
 If anything fails, report it and offer to re-run the relevant step.
 
 ## Step 7 — Optional first sync
 
 Use `AskUserQuestion`:
 
-> "Run the first sync now? (one-way pull, all four databases)"
+> "Run the first sync now? (one-way pull, all three databases)"
 
 If yes:
 
@@ -212,7 +215,7 @@ One-shot sync from Notion into gbrain. Also seeds `sync-state.db` so a later
 bun "$env:CLAUDE_PLUGIN_ROOT/scripts/sync-pull.mjs" --database <db-name> --dry-run
 ```
 
-`<db-name>` is one of: `projects`, `todo`, `inbox`, `knowledge`.
+`<db-name>` is one of: `projects`, `inbox`, `knowledge`.
 
 Review the listed pages. Stop here if the count looks wrong (token expired,
 wrong DB ID, or integration not shared).
@@ -260,7 +263,7 @@ cd "$CLAUDE_PLUGIN_ROOT" && bun run push
 ```
 
 For each gbrain page (only those whose frontmatter `source` is one of
-`projects` / `todo` / `inbox` / `knowledge`), `scripts/sync.mjs` compares the
+`projects` / `inbox` / `knowledge`), `scripts/sync.mjs` compares the
 live Notion state and the gbrain page against the `sync-state.db` baseline:
 
 - **to_notion** — only the gbrain side changed → push the edit to Notion
@@ -381,8 +384,8 @@ node "$env:CLAUDE_PLUGIN_ROOT/scripts/doctor.mjs"
 Checks (in order):
 
 1. `gbrain doctor` exit code is 0
-2. `.env` exists and all five required keys are non-empty
-3. Notion API reachable: GET each of the four `NOTION_DB_*` IDs
+2. `.env` exists and all four required keys are non-empty
+3. Notion API reachable: GET each of the three `NOTION_DB_*` IDs
 4. `gbrain put --help` succeeds (CLI alignment)
 5. `${CLAUDE_PLUGIN_ROOT}/dist/` exists (build artifact present)
 
