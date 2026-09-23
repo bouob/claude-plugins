@@ -1,12 +1,13 @@
 {
   "name": "notion-sync",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Sync Notion PAI databases to gbrain knowledge graph",
   "type": "module",
   "scripts": {
-    "sync": "node scripts/sync-pull.mjs",
-    "sync:dry": "node scripts/sync-pull.mjs --dry-run",
-    "postprocess": "node scripts/postprocess.mjs",
+    "sync": "bun scripts/sync-pull.mjs",
+    "sync:dry": "bun scripts/sync-pull.mjs --dry-run",
+    "push": "bun scripts/sync.mjs",
+    "push:dry": "bun scripts/sync.mjs --dry-run",
     "doctor": "node scripts/doctor.mjs",
     "typecheck": "tsc --noEmit",
     "build": "tsc"

@@ -81,23 +81,25 @@ bun link
    ```env
    NOTION_TOKEN=secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
    NOTION_DB_PROJECTS=...
-   NOTION_DB_TODO=...
    NOTION_DB_INBOX=...
    NOTION_DB_KNOWLEDGE=...
    ```
 
    **注意**：不要把真實 token 提交到 git（`.env` 已在 `.gitignore`）。
 
+   **To-Do 資料庫不同步**（無 `NOTION_DB_TODO`）：gbrain 沒有 `todo` 這個 canonical type，
+   而已完成的任務沒有可檢索的 body，同步它只會把 brain 灌滿空白頁。待辦直接看 Notion。
+   要恢復的話，`.env.example` 裡記了完整步驟。
+
 ---
 
-### Step 4 — 在 Notion UI 分享 Integration 給 4 個 PAI 資料庫
+### Step 4 — 在 Notion UI 分享 Integration 給 3 個 PAI 資料庫
 
-在 Notion 中，逐一開啟以下四個資料庫頁面，點擊右上角「...」→「Connections」→「Add connections」→ 選擇 `gbrain-sync`：
+在 Notion 中，逐一開啟以下三個資料庫頁面，點擊右上角「...」→「Connections」→「Add connections」→ 選擇 `gbrain-sync`：
 
 1. 🎯 **Projects**
-2. ✔️ **To-Do**
-3. 📥 **Inbox**
-4. 💬 **知識庫**
+2. 📥 **Inbox**
+3. 💬 **知識庫**
 
 ---
 
@@ -108,7 +110,7 @@ bun link
 | 變數 | 說明 |
 |---|---|
 | `NOTION_TOKEN` | Step 3 取得的 Integration Secret |
-| `NOTION_DB_PROJECTS` / `_TODO` / `_INBOX` / `_KNOWLEDGE` | 四個 PAI 資料庫 ID |
+| `NOTION_DB_PROJECTS` / `_INBOX` / `_KNOWLEDGE` | 三個 PAI 資料庫 ID（To-Do 不同步） |
 
 ---
 
@@ -313,7 +315,17 @@ bun scripts/sync.mjs --conflicts
 
 - `pull` / `push` 都用 **`bun`** 跑（載入 `sync-state.js` → `bun:sqlite`），不可用 `node`。
 - push 不會在 Notion 新增屬性欄位或 select 選項 — 不存在的值會被略過並 warn。
-- 新頁的 `source` frontmatter 必須是 `inbox` 或 `knowledge`，否則略過（不允許 agent 建 Projects/To-Do 頁）。
+- 新頁的 `source` frontmatter 必須是 `inbox` 或 `knowledge`，否則略過（不允許 agent 建 Projects 頁）。
+- **`gbrain list` 有硬上限 100 列**（`--limit` 給多少都一樣，CLI 與 MCP `list_pages` 皆然）。
+  push 因此**不從 listing 取工作清單** —— 它以 `sync-state.db` 為準（那裡記著每一頁同步過的
+  `notion_page_id`），listing 只用來發現「還沒有 `notion_page_id` 的新頁」（新頁剛寫入，必在
+  `updated_desc` 前段，100 列的上限蓋不掉它）。啟動時會印
+  `N listed (100-row cap), M tracked in sync-state → K to reconcile`。
+  曾有的 bug：純靠 listing 驅動時，brain 一超過 100 頁，舊的 Notion 頁就沉出範圍、push 對它們
+  靜默失效（回報 `skip=0` 卻看似正常）。
+- push 回報的 `warn` 含「tracked page not in gbrain」——sync-state 有紀錄但 gbrain 已無該頁
+  （本地刪掉了）。push 絕不寫 gbrain，所以它只警告不動作。要消掉這類警告，從 `sync-state.db`
+  的 `pages` 表刪掉該 `notion_page_id` 的列。
 
 ---
 
@@ -326,7 +338,7 @@ bun scripts/sync.mjs --conflicts
 ```
 
 檢查項目（順序）：
-1. `.env` 存在且 5 個必要 key（NOTION_TOKEN + 4 個 DB ID）都有值
+1. `.env` 存在且 4 個必要 key（NOTION_TOKEN + 3 個 DB ID）都有值
 2. `dist/` build artifact 存在
 3. `gbrain` CLI 在 PATH 上且 `gbrain doctor` exit 0
 4. `gbrain put --help` 成功（CLI 對齊驗證）
@@ -504,4 +516,5 @@ cd notion-sync && bun run sync
 | `MultiXactId has not been created` | CLI 寫入與 stdio MCP 衝突 | 遷移至 HTTP 模式，見上方步驟 |
 | 同步卡在第一頁（第一頁 `created_or_updated` 後無後續）| `getPage()` 回退到本機 CLI 路徑 | 確認 `gbrain-adapter.ts` build 是最新版（`bun run build`）；确認 `.env` 有 `GBRAIN_HTTP_URL` 和 `GBRAIN_HTTP_TOKEN` |
 | `Cannot GET /admin` | Admin URL 少了尾端斜線 | 改用 `http://localhost:7432/admin/` |
+| migration 未套用 / 升級後 schema 過舊 | 安裝或升級 gbrain 後 migration 未自動套用 | `gbrain apply-migrations` 手動套用（已驗證 Postgres/Supabase 模式有效，v0.42.26；非互動環境可試舊 flag `--yes`，新版若報未知參數則省略） |
 

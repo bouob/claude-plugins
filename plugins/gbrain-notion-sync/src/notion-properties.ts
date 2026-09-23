@@ -39,7 +39,13 @@ export interface PropertyMapping {
   type: WritablePropertyType;
 }
 
-/** Per-database writable property maps. */
+/**
+ * Per-database writable property maps.
+ *
+ * `todo` is retained but unreachable: To-Do is not in SUPPORTED_DATABASES
+ * (scripts/sync-pull.mjs, scripts/sync.mjs), so nothing looks it up. Kept so
+ * re-enabling the database is a one-line change rather than a rewrite.
+ */
 export const PROPERTY_MAP: Record<string, PropertyMapping[]> = {
   projects: [
     { notionProp: '狀態', key: 'status', type: 'select' },
