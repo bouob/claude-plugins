@@ -77,10 +77,10 @@ Fix: the test to add or correct (what it should assert and why).
 - **Medium** — important edge case uncovered; brittle/overfit test.
 - **Low** — optional completeness.
 
-End with a `Coverage:` block listing every changed file in your slice exactly
-once, as `reviewed` or `skipped: <reason>` — e.g. `skipped: no behavior change`.
-/pr-review checks this list against the changed files; a file you leave out
-counts as a gap.
+End with a `Coverage:` block listing every file in your `Owned files:` list
+exactly once, as `reviewed` or `skipped: <reason>` — e.g. `skipped: no behavior
+change`. /pr-review checks this list against your owned files; a file you leave
+out counts as a gap.
 
 ```
 Coverage:

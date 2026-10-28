@@ -73,10 +73,10 @@ Type-design findings are usually **Medium** (maintainability / future bug
 surface). Escalate to **High/Blocking** only when the design makes a clear
 correctness or security bug representable. Drop pure style preference.
 
-End with a `Coverage:` block listing every changed file in your slice exactly
-once, as `reviewed` or `skipped: <reason>` — e.g. `skipped: no type changes`.
-/pr-review checks this list against the changed files; a file you leave out
-counts as a gap.
+End with a `Coverage:` block listing every file in your `Owned files:` list
+exactly once, as `reviewed` or `skipped: <reason>` — e.g. `skipped: no type
+changes`. /pr-review checks this list against your owned files; a file you leave
+out counts as a gap.
 
 ```
 Coverage:
