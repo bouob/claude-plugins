@@ -59,6 +59,20 @@ If the project ships a security policy/convention, hold the change to it; if it
 does not, apply general secure-coding judgment — do not invent project-specific
 rules or flag the absence of a specific tool.
 
+## What counts as a finding
+
+- Report only an established boundary failure: attacker-controlled input or an
+  untrusted actor reaches a protected asset or action along a path you can trace
+  in the bundle. Name the attacker, the entry point, and the asset.
+- A missing extra defense layer while another control still holds is hardening,
+  not a vulnerability — `Low` at most, labeled `hardening`.
+- Rate severity as Likelihood × Impact, not by category. Likelihood: what the
+  attacker needs (unauthenticated/remote → high; authenticated, admin, or local
+  access → lower). Impact: what is lost (secrets, other users' data, code
+  execution → high; the attacker's own data only → low).
+- If the path depends on code outside the bundle, state what must hold and
+  downgrade instead of assuming the worst.
+
 ## Output
 
 Use the same schema as /pr-review. Order strictly Blocking → High → Medium →
@@ -67,15 +81,27 @@ Low; omit empty sections. Each finding four lines:
 ```
 [Severity] path/to/file.ext:line
 Problem: the vulnerability or leak.
-Risk: how it is exploited and the impact.
+Risk: attacker → entry point → asset, and the impact.
 Fix: the concrete remediation.
 ```
 
 - **Blocking** — exploitable injection/authz bypass/auth break, or a real secret
   leak (high confidence the value is genuine).
 - **High** — likely-exploitable weakness needing a clear precondition.
-- **Medium** — defense-in-depth gap, weak validation, risky-but-guarded pattern.
-- **Low** — hardening suggestion.
+- **Medium** — exploitable only under a non-trivial precondition, or with
+  limited impact (e.g. disclosure without secrets).
+- **Low** — `hardening`: a missing extra layer where another control holds.
+
+End with a `Coverage:` block listing every changed file in your slice exactly
+once, as `reviewed` or `skipped: <reason>`. Any file can leak a secret, so every
+changed file is in your dimension — skip only binary files. /pr-review checks
+this list against the changed files; a file you leave out counts as a gap.
+
+```
+Coverage:
+- src/api/user.ts — reviewed
+- assets/logo.png — skipped: binary
+```
 
 Report only findings you have real confidence in; drop speculative or
 style-level items. Findings only — no edits. Match the language of the reviewed

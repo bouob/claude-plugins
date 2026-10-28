@@ -77,6 +77,17 @@ Fix: the test to add or correct (what it should assert and why).
 - **Medium** — important edge case uncovered; brittle/overfit test.
 - **Low** — optional completeness.
 
+End with a `Coverage:` block listing every changed file in your slice exactly
+once, as `reviewed` or `skipped: <reason>` — e.g. `skipped: no behavior change`.
+/pr-review checks this list against the changed files; a file you leave out
+counts as a gap.
+
+```
+Coverage:
+- src/api/user.ts — reviewed
+- README.md — skipped: no behavior change
+```
+
 Findings only — no edits, no test runs. Match the language of the reviewed
 code/PR; default to English. If nothing is found, say so and note any limits.
 

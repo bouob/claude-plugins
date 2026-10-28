@@ -87,6 +87,17 @@ Fix: the concrete change.
 - **Medium** — weak error message, missing context, over-broad catch.
 - **Low** — minor surfacing/clarity improvement.
 
+End with a `Coverage:` block listing every changed file in your slice exactly
+once, as `reviewed` or `skipped: <reason>` — e.g. `skipped: no error paths`.
+/pr-review checks this list against the changed files; a file you leave out
+counts as a gap.
+
+```
+Coverage:
+- src/lib/cache.ts — reviewed
+- docs/setup.md — skipped: no error paths
+```
+
 Findings only — no edits, no test runs. Match the language of the reviewed
 code/PR; default to English. If nothing is found, say so and note any limits
 (e.g. partial diff bundle).

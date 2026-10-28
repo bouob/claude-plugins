@@ -7,11 +7,15 @@ A [Claude Code plugin](https://docs.anthropic.com/en/docs/claude-code/plugins) f
 ## Install
 
 ```bash
-# add as marketplace + install (recommended)
-/plugin marketplace add bouob/coding-skills
-/plugin install coding-skills
+# Via the bouob-plugins marketplace (recommended)
+/plugin marketplace add bouob/claude-plugins
+/plugin install coding-skills@bouob-plugins
 
-# or load directly during development
+# Or directly from this repo
+/plugin marketplace add bouob/coding-skills
+/plugin install coding-skills@coding-skills
+
+# Or load directly during development
 claude --plugin-dir ./coding-skills
 ```
 
@@ -65,12 +69,15 @@ These are not shown in the `/` menu. Workflow skills instruct Claude to load the
 - **Methodology skills** are loaded by workflow instructions at the appropriate step (e.g., `/fix` always loads `testing`, optionally loads `principles` if the root cause is structural)
 - `disable-model-invocation: true` on workflow skills — no accidental auto-triggering
 - `/pr-review` delegates **every** review dimension to this plugin's own five read-only specialist agents and runs them all in parallel by default, every time — no keyword needed, no diff-gating, no external toolkit. The main context only orchestrates and merges; nothing is reviewed inline. A host without subagent support degrades to a single inline pass over the same checklist.
+- `/pr-review` separates finding from verifying: every reviewer reports which changed files it covered (a dropped file is re-dispatched once, then shown as a coverage gap — never a silent "clean"), and every Blocking/High candidate is re-checked by a fresh `finding-verifier` that tries to disprove it (`confirmed` / `needs_validation` / `rejected`). Adapted from the coverage-ledger and independent-verification phases of [cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill) (MIT).
 
 ## Review Agents
 
-`/pr-review` ships five read-only specialist agents (in `agents/`). They are
-auto-discovered — `/pr-review` delegates to all of them in parallel by default, and
-you can also invoke any of them directly ("review the error handling in this diff").
+`/pr-review` ships five read-only specialist agents plus one verifier (in
+`agents/`). They are auto-discovered — `/pr-review` delegates to all five
+reviewers in parallel by default, then to one verifier per Blocking/High
+candidate, and you can also invoke any of them directly ("review the error
+handling in this diff", "double-check this finding").
 
 | Agent | Dimension | What it catches |
 |-------|-----------|-----------------|
@@ -79,8 +86,9 @@ you can also invoke any of them directly ("review the error handling in this dif
 | `type-design-reviewer` | Type design | Weak/unenforced invariants, representable illegal states, `any`, broken encapsulation (4-axis rubric) |
 | `test-risk-reviewer` | Test risk | Behavior changed without a guarding test, wrong assertions, removed/weakened tests, brittle tests |
 | `security-reviewer` | Security + secret leak | Injection, authz bypass, CORS/auth/trust-boundary gaps, real committed secrets |
+| `finding-verifier` | Verification (not a dimension) | Re-traces one candidate finding, looks for the control that prevents it, and keeps or lowers its severity — never raises it |
 
-Why these over a generic toolkit: every agent emits the **same severity schema**
+Why these over a generic toolkit: every reviewer emits the **same severity schema**
 as `/pr-review` (`Blocking → High → Medium → Low`, four-line findings) so results
 merge with no translation; all are **read-only** (simplification lives in
 `/refactor`); they take a **diff bundle** from the orchestrator (works for remote

@@ -19,7 +19,7 @@ or submit GitHub reviews.
 Scope split: `/pr-review` handles **remote GitHub PRs**. Local uncommitted or
 staged diff → use `/review`.
 
-This skill has two concerns:
+This skill has three concerns:
 
 1. The `pr-review` workflow: PR scope resolution, context collection, review
    dimensions, read-only rules, and output schema.
@@ -30,6 +30,10 @@ This skill has two concerns:
    dispatch and no user-facing toggle: the main context only builds the bundle,
    fans out the Task calls, and merges. A host without the Task tool degrades to
    a single inline pass over the same checklist anchors.
+3. The evidence policy: finding is not verifying. Every reviewer reports which
+   changed files it covered, so a dropped file surfaces as a gap instead of a
+   silent clean result; every Blocking/High candidate is then re-checked by a
+   fresh `finding-verifier` that did not find it and tries to disprove it.
 
 The review dimensions below are anchors, not a closed list. Report any
 high-confidence merge risk that is inside the PR scope, can be tied to the diff
@@ -113,10 +117,11 @@ Dimension → agent (all five always launched):
 - Type design → `type-design-reviewer`
 - Test risk → `test-risk-reviewer`
 
-Every agent emits the exact Step 6 schema, so merging delegated results is a
-straight concatenation + de-dup — no severity translation, no external toolkit.
-An agent whose dimension is absent from the diff returns no findings; that is
-expected and collapses to a one-line note in Step 5, not a wasted section.
+Every agent emits the exact Step 8 schema plus a `Coverage:` block, so merging
+delegated results is a straight concatenation + de-dup — no severity
+translation, no external toolkit. An agent whose dimension is absent from the
+diff returns no findings; that is expected and collapses to a one-line note in
+Step 8, not a wasted section.
 
 Launch steps — this is what makes the agents run concurrently:
 
@@ -126,7 +131,7 @@ Launch steps — this is what makes the agents run concurrently:
    above — each carrying the slice it owns. Multiple `Task` calls in one message
    run concurrently; do not send them one message at a time, and do not review
    any dimension inline in this context.
-3. Wait for every agent to return, then merge per Step 5.
+3. Wait for every agent to return, then run Steps 5–7.
 
 Slice shape — decide before sending the Task calls:
 
@@ -143,6 +148,8 @@ Each delegated slice (Task prompt) must carry:
 - the dimensions or file group the slice owns,
 - the checklist anchors below,
 - the required finding schema (severity, `file:line`, problem, risk, fix),
+- the instruction to end with a `Coverage:` block listing every changed file in
+  the slice exactly once as `reviewed` or `skipped: <reason>`,
 - the instruction to return findings only — no file edits, no test runs,
 - the instruction that checklist anchors are not exhaustive; adjacent clear
   merge risks inside PR scope should still be reported.
@@ -177,22 +184,63 @@ Per-dimension checklist anchors:
 - **Comment & doc consistency** — stale, misleading, or code-contradicting
   comments / README / API docs / examples.
 
-## Step 5 — Merge Findings
+## Step 5 — Check Coverage
+
+Treat the changed-file list from Step 2 as the coverage ledger. Compare it with
+each agent's `Coverage:` block:
+
+- **Dropped** — a file in the agent's slice that its block does not list. That
+  is a silent gap, not a clean result.
+- **Unreviewed** — a file that no agent marked `reviewed`.
+
+`correctness-reviewer` and `security-reviewer` own every changed file:
+correctness may skip only generated, vendored, or binary files, and security
+only binary files (any text file can leak a secret). The other three may skip a
+file that has nothing in their dimension.
+
+Run one coverage wave: in a SINGLE message, re-dispatch each dropped file to the
+agent that dropped it, and each unreviewed file to `correctness-reviewer`, with
+only those files' hunks. A file still uncovered after that wave is listed under
+`Coverage gaps` in Step 8 — never cap silently.
+
+## Step 6 — Merge Findings
 
 Combine results from all five agents:
 
-- de-duplicate findings that point at the same `file:line`,
-- calibrate severity against the table in Step 6,
+- de-duplicate findings that point at the same `file:line`, and merge findings
+  that share one root cause reached from several places — keep the most direct
+  location and name the others in `Problem`,
+- calibrate severity against the table in Step 8,
 - ensure every finding has file and line number,
 - drop pure style preferences,
-- skip points already raised in existing PR comments (from Step 2),
-- collapse every agent that returned no findings into a single trailing line
-  (e.g. `Clean: type-design, error-handling, test-risk — no findings`) instead
-  of giving each an empty section.
+- skip points already raised in existing PR comments (from Step 2).
 
-## Step 6 — Output
+## Step 7 — Verify Blocking/High Candidates
 
-Order strictly: `Blocking` → `High` → `Medium` → `Low`. Omit any empty section.
+Finders do not verify their own findings. After merging, every `Blocking` and
+`High` finding is a candidate, not a result:
+
+1. In a SINGLE message, issue one `Task` call to `finding-verifier` per
+   candidate. Each carries the one candidate and the reviewer that reported it,
+   the same diff bundle, and whether the PR head is checked out locally — never
+   other candidates or other verifiers' verdicts.
+2. Apply each verdict:
+   - `confirmed` → keep, with the verifier's corrected line and severity (the
+     verifier may lower severity, never raise it),
+   - `needs_validation` → move to `Needs validation` with the named blocker,
+   - `rejected` → drop it from the findings and list it in the verification
+     footer with the control that refuted it.
+3. A verifier reply that does not follow its block → re-run once with a fresh
+   verifier; still malformed → list the candidate under `Unverified`.
+
+Verify at most 10 candidates, `Blocking` first. Any beyond that go under
+`Unverified` with their reported severity — never presented as confirmed.
+`Medium`/`Low` findings are not verified; the footer says so.
+
+## Step 8 — Output
+
+Order strictly: `Blocking` → `High` → `Medium` → `Low` → `Needs validation` →
+`Unverified` → `Coverage gaps`. Omit any empty section.
 
 - **Blocking** — security, data loss, clear correctness bug, compatibility break,
   secret leak.
@@ -215,7 +263,20 @@ Fix: Validate tenantId in both the query conditions and the authorization check.
 Problem: The catch block swallows the error and returns an empty array, so callers cannot distinguish "empty cache" from "read failed".
 Risk: Upstream failures are silently converted into successful results, delaying discovery and making the issue harder to diagnose.
 Fix: Re-throw from catch or return a result type with an explicit error flag.
+
+[Needs validation] src/routes/export.ts:17
+Problem: The export route reads `req.query.path` into a filesystem read.
+Blocker: Whether the reverse proxy strips `..` segments is outside the bundle — check the proxy's path normalization config.
+
+Coverage: 14/14 changed files reviewed (1 re-dispatched)
+Verification: 2 confirmed, 1 needs validation, 1 rejected (src/auth/session.ts:30 — token is verified by verifySession() at :12); Medium/Low not verified
+Clean: type-design, test-risk — no findings
 ```
+
+`Needs validation` and `Unverified` entries carry no severity. Always end with
+the `Coverage` and `Verification` lines, even when nothing is found. Collapse
+every agent that returned no findings into the single `Clean:` line instead of
+giving each an empty section.
 
 If nothing is found, write “未發現明顯破壞風險” and list the review limitations
 (e.g. could not fetch full diff, CI summary unavailable, dimension X skipped).
@@ -246,7 +307,15 @@ only on explicit user request:
   `error-handling-reviewer`, `type-design-reviewer`, `test-risk-reviewer`), all
   launched every time, no external toolkit required. A host without the Task tool
   degrades to applying the same checklist anchors inline — no keyword, no separate
-  mode.
+  mode. Without Task there is no independent verifier: say `Verification: not
+  run (no subagent support)` instead of presenting candidates as verified.
+- A reviewer's empty findings only mean "clean" if its `Coverage:` block lists
+  every file in its slice. Missing block or missing files → Step 5 gap, not clean.
+- The verifier is a fresh context per candidate on purpose. Batching candidates
+  into one verifier, or passing it the reviewer's reasoning beyond the finding
+  itself, lets one conclusion anchor the next.
+- A rejected candidate stays visible in the footer with its refuting control, so
+  the user can audit the drop.
 - Empty `$ARGUMENTS`: if the current branch has no resolvable GitHub PR, route
   to `/review`, do not fabricate a review.
 - Secret-leak `Blocking` requires high confidence the value is real. Fake keys in

@@ -85,6 +85,17 @@ Fix: the concrete change.
   pattern.
 - **Low** — comment clarity, doc/example drift, naming consistency.
 
+End with a `Coverage:` block listing every changed file in your slice exactly
+once, as `reviewed` or `skipped: <reason>`. Every changed file is in your
+dimension — skip only generated, vendored, or binary files. /pr-review checks
+this list against the changed files; a file you leave out counts as a gap.
+
+```
+Coverage:
+- src/api/user.ts — reviewed
+- package-lock.json — skipped: generated lockfile
+```
+
 Findings only — no edits, no test runs. Match the language of the reviewed
 code/PR; default to English. If nothing is found, say so and note any limits
 (e.g. partial diff bundle).

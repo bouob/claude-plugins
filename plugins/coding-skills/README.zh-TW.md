@@ -7,9 +7,13 @@
 ## 安裝
 
 ```bash
-# 從 marketplace 新增並安裝（推薦）
+# 透過 bouob-plugins marketplace（推薦）
+/plugin marketplace add bouob/claude-plugins
+/plugin install coding-skills@bouob-plugins
+
+# 或直接從本 repo 安裝
 /plugin marketplace add bouob/coding-skills
-/plugin install coding-skills
+/plugin install coding-skills@coding-skills
 
 # 或在開發時直接載入
 claude --plugin-dir ./coding-skills
@@ -65,11 +69,12 @@ Skills：`/write`、`/fix`、`/review`、`/pr-review`、`/refactor`、`/diagnose
 - **方法論 Skills** 由工作流程指令在適當步驟載入（例如 `/fix` 總是載入 `testing`，若根因涉及設計問題則額外載入 `principles`）
 - 工作流程 Skills 皆設定 `disable-model-invocation: true` — 不會意外自動觸發
 - `/pr-review` 預設就把**全部**審查維度委派給本 plugin 自帶的**五個**唯讀 specialist agent 並一律平行執行 — 不需任何關鍵字、不 diff-gating、不需外部 toolkit。主 context 只負責 orchestrate 與合併，不 inline 審任何東西。host 無 subagent 支援時自然退化成單一 context 的 inline 審查（套用同一份 checklist）。
+- `/pr-review` 把「找問題」和「驗證」分開：每個 reviewer 都要回報審過哪些變更檔（漏掉的檔案重派一次，仍漏就列為覆蓋缺口，絕不當成「沒問題」），每個 Blocking/High 候選再交給一個全新的 `finding-verifier` 嘗試反駁（`confirmed` / `needs_validation` / `rejected`）。機制改編自 [cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill)（MIT）的覆蓋帳本與獨立驗證階段。
 
 ## 審查 Agents
 
-`/pr-review` 內建五個唯讀 specialist agent（位於 `agents/`），自動被發現 —
-`/pr-review` 預設就平行委派給全部，你也可以直接呼叫任何一個（例如「審查這段 diff 的 error handling」）。
+`/pr-review` 內建五個唯讀 specialist agent 加一個 verifier（位於 `agents/`），自動被發現 —
+`/pr-review` 預設平行委派給五個 reviewer，再替每個 Blocking/High 候選各派一個 verifier；你也可以直接呼叫任何一個（例如「審查這段 diff 的 error handling」「再確認這條 finding」）。
 
 | Agent | 維度 | 抓什麼 |
 |-------|------|--------|
@@ -78,8 +83,9 @@ Skills：`/write`、`/fix`、`/review`、`/pr-review`、`/refactor`、`/diagnose
 | `type-design-reviewer` | Type design | 弱／未強制的不變量、可表示的非法狀態、`any`、破損的封裝（4 軸評分）|
 | `test-risk-reviewer` | Test risk | 行為改變卻無守備測試、錯誤斷言、被移除／弱化的測試、脆弱測試 |
 | `security-reviewer` | Security + 金鑰外洩 | injection、authz 繞過、CORS/auth/信任邊界落差、真實提交的金鑰 |
+| `finding-verifier` | 驗證（不是審查維度） | 重新追蹤單一候選 finding、找出能擋住它的控制，嚴重度只能維持或調降，不會調高 |
 
-為何優於通用 toolkit：每個 agent 都輸出與 `/pr-review` **相同的 severity schema**
+為何優於通用 toolkit：每個 reviewer 都輸出與 `/pr-review` **相同的 severity schema**
 （`Blocking → High → Medium → Low`、四行 finding），合併時零翻譯；全部**唯讀**
 （簡化交給 `/refactor`）；接收 orchestrator 傳入的 **diff bundle**（適用遠端 GitHub
 PR，不限本地 `git diff`）；維持 **model-agnostic**（`inherit`）；且**不帶任何專案或
