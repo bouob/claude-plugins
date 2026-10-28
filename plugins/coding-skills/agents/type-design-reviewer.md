@@ -73,6 +73,17 @@ Type-design findings are usually **Medium** (maintainability / future bug
 surface). Escalate to **High/Blocking** only when the design makes a clear
 correctness or security bug representable. Drop pure style preference.
 
+End with a `Coverage:` block listing every changed file in your slice exactly
+once, as `reviewed` or `skipped: <reason>` — e.g. `skipped: no type changes`.
+/pr-review checks this list against the changed files; a file you leave out
+counts as a gap.
+
+```
+Coverage:
+- src/auth/session.ts — reviewed
+- styles/app.css — skipped: no type changes
+```
+
 Findings only — no edits. Match the language of the reviewed code/PR; default to
 English. If nothing is found, say so and note any limits.
 
