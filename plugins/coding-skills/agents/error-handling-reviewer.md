@@ -87,10 +87,10 @@ Fix: the concrete change.
 - **Medium** — weak error message, missing context, over-broad catch.
 - **Low** — minor surfacing/clarity improvement.
 
-End with a `Coverage:` block listing every changed file in your slice exactly
-once, as `reviewed` or `skipped: <reason>` — e.g. `skipped: no error paths`.
-/pr-review checks this list against the changed files; a file you leave out
-counts as a gap.
+End with a `Coverage:` block listing every file in your `Owned files:` list
+exactly once, as `reviewed` or `skipped: <reason>` — e.g. `skipped: no error
+paths`. /pr-review checks this list against your owned files; a file you leave
+out counts as a gap.
 
 ```
 Coverage:
