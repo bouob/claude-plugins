@@ -32,7 +32,7 @@ Skills：`/write`、`/fix`、`/review`、`/pr-review`、`/refactor`、`/diagnose
 | `/write <功能描述>` | 以 TDD 方式實作功能 |
 | `/fix <錯誤描述>` | 修復錯誤（診斷 → Red → Green → Refactor） |
 | `/review [--staged \| path]` | 審查本地變更（風格、測試、架構） |
-| `/pr-review [PR URL \| owner/repo#n]` | GitHub PR 靜態風險審查（安全性、breaking change、金鑰外洩…）— 唯讀 |
+| `/pr-review [PR URL \| PR 編號 \| owner/repo#n \| local \| base..head]` | GitHub PR 或本地 commit 範圍的靜態風險審查（安全性、breaking change、金鑰外洩…）— 唯讀。不帶參數：審目前分支的 PR，沒有 PR 就審領先預設分支的 commit（輸出第一行 `Target:` 會寫明審的是哪一個）。結尾輸出 `VERDICT: BLOCK \| INCOMPLETE \| PASS`，可當發布前的關卡 |
 | `/refactor [path \| module]` | 安全重構，含壞味道分析與 TDD 驗證 |
 | `/diagnose <錯誤描述>` | 純診斷 — 找出根因但不動程式碼。也會被 `/fix` 載入。 |
 | `/spec <功能描述>` | 定義介面契約（Given/When/Then + TypeScript interface + 不變量） |
