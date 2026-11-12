@@ -32,7 +32,7 @@ Skills: `/write`, `/fix`, `/review`, `/pr-review`, `/refactor`, `/diagnose`, `/s
 | `/write <feature>` | Implement a feature with TDD |
 | `/fix <bug>` | Fix a bug (diagnose → Red → Green → Refactor) |
 | `/review [--staged \| path]` | Review local changes (style, tests, architecture) |
-| `/pr-review [PR URL \| owner/repo#n]` | Static risk review of a GitHub PR (security, breaking change, secret leak, …) — read-only |
+| `/pr-review [PR URL \| PR number \| owner/repo#n \| local \| base..head]` | Static risk review of a GitHub PR or a local commit range (security, breaking change, secret leak, …) — read-only. No argument: the current branch's PR, or the commits ahead of the default branch when it has none (the first output line, `Target:`, says which). Ends with `VERDICT: BLOCK \| INCOMPLETE \| PASS` so it can gate a publish step |
 | `/refactor [path \| module]` | Safe refactoring with smell analysis and TDD verification |
 | `/diagnose <error>` | Diagnosis only — find root cause without code changes. Also loaded by `/fix`. |
 | `/spec <feature>` | Define interface contract (Given/When/Then + TypeScript interface + invariants) |
