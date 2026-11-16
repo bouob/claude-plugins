@@ -5,7 +5,7 @@
     "email": "victor@0x1.now"
   },
   "metadata": {
-    "description": "Victor's Claude Code plugins — statusline, coding skills, sysadmin skills, multi-agent harness, repo security vetting, and Notion↔gbrain sync.",
+    "description": "Victor's Claude Code plugins — statusline, coding skills, sysadmin skills, multi-agent harness, and repo security vetting.",
     "version": "1.0.0"
   },
   "plugins": [
@@ -56,21 +56,6 @@
         "python",
         "code-review",
         "solid"
-      ],
-      "license": "MIT"
-    },
-    {
-      "name": "gbrain-notion-sync",
-      "source": "./plugins/gbrain-notion-sync",
-      "description": "Sync Notion PAI second-brain (Projects, Inbox, Knowledge Base) into local gbrain knowledge graph for fast Claude Code retrieval. Provides /notion-sync slash command with init / pull / push / conflicts / schedule / status / doctor sub-commands.",
-      "keywords": [
-        "notion",
-        "gbrain",
-        "knowledge-graph",
-        "second-brain",
-        "pai",
-        "sync",
-        "claude-code"
       ],
       "license": "MIT"
     },
