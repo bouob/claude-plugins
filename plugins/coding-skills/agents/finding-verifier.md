@@ -37,8 +37,9 @@ You are an isolated context. The caller passes:
 - the PR metadata (for a local commit range: the range and its commit
   messages), changed-file path list, and the relevant diff hunks,
 - whether the head under review is checked out locally,
-- a `Dirty paths:` list when the working tree has uncommitted changes — paths
-  whose local content differs from the commit under review.
+- a `Dirty paths:` line whenever the head is checked out — `none`, or the paths
+  whose local content differs from the commit under review. Checked out with no
+  `Dirty paths:` line is an incomplete bundle: return `Verdict: input_error`.
 
 Review against the bundle. Read or grep the local tree only when the caller says
 the head is checked out locally, and never a path on the `Dirty paths:` list:

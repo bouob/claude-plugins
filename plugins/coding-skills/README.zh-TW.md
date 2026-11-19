@@ -68,7 +68,7 @@ Skills：`/write`、`/fix`、`/review`、`/pr-review`、`/refactor`、`/diagnose
 - **工作流程 Skills** 使用編號步驟加上明確確認關卡 — Claude 在你核准計畫前不會撰寫任何程式碼
 - **方法論 Skills** 由工作流程指令在適當步驟載入（例如 `/fix` 總是載入 `testing`，若根因涉及設計問題則額外載入 `principles`）
 - 工作流程 Skills 皆設定 `disable-model-invocation: true` — 不會意外自動觸發
-- `/pr-review` 預設就把**全部**審查維度委派給本 plugin 自帶的**五個**唯讀 specialist agent 並一律平行執行 — 不需任何關鍵字、不 diff-gating、不需外部 toolkit。主 context 只負責 orchestrate 與合併，不 inline 審任何東西。host 無 subagent 支援時自然退化成單一 context 的 inline 審查（套用同一份 checklist）。
+- `/pr-review` 預設就把**全部**審查維度委派給本 plugin 自帶的**五個**唯讀 specialist agent 並一律平行執行 — 不需任何關鍵字、不 diff-gating、不需外部 toolkit。主 context 只負責 orchestrate 與合併，不 inline 審任何東西。host 無 subagent 支援時自然退化成單一 context 的 inline 審查（套用同一份 checklist）；沒有獨立複驗，判定一律是 `INCOMPLETE`。
 - `/pr-review` 把「找問題」和「驗證」分開：每個 reviewer 都要回報審過哪些變更檔（漏掉的檔案重派一次，仍漏就列為覆蓋缺口，絕不當成「沒問題」），每個 Blocking/High 候選再交給一個全新的 `finding-verifier` 嘗試反駁（`confirmed` / `needs_validation` / `rejected`）。機制改編自 [cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill)（MIT）的覆蓋帳本與獨立驗證階段。
 
 ## 審查 Agents
